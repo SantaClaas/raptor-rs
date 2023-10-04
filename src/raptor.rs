@@ -48,7 +48,6 @@ impl Hash for StopId {
     }
 }
 
-
 struct Trip {}
 
 /// The time a trip stops at a stop
@@ -74,7 +73,6 @@ struct Route {
     /// Pointer to the StopTimes list representing the trips that operate on the route
     stop_times_start_index: usize,
 }
-
 
 struct RoutesData {
     /// This array is divided into blocks, and the i-th block contains all trips corresponding
@@ -107,7 +105,9 @@ impl RoutesData {
     /// route
     fn get_stop_sequence(&self, route: &Route, stop: &usize) -> Option<usize> {
         let route_stops = self.get_route_stops(route);
-        route_stops.iter().position(|route_stop| &route_stop == &stop)
+        route_stops
+            .iter()
+            .position(|route_stop| &route_stop == &stop)
     }
 
     fn get_trips(&self, route: &Route) -> Chunks<StopTime> {
@@ -117,11 +117,18 @@ impl RoutesData {
     }
 
     /// Get the earliest trip departing from a stop along the route after some time
-    fn get_earliest_departing_trip(&self, from_stop_id: &usize, route: &Route, after: &Time) -> Option<&[StopTime]> {
+    fn get_earliest_departing_trip(
+        &self,
+        from_stop_id: &usize,
+        route: &Route,
+        after: &Time,
+    ) -> Option<&[StopTime]> {
         // Only the iterator is mutable
         let mut trips = self.get_trips(route);
         self.get_stop_sequence(route, &from_stop_id)
-            .and_then(|from_stop_sequence| trips.find(|trip| &trip[from_stop_sequence].departure_time > after))
+            .and_then(|from_stop_sequence| {
+                trips.find(|trip| &trip[from_stop_sequence].departure_time > after)
+            })
     }
 }
 
@@ -152,7 +159,6 @@ struct Label {
 /// The index of a route in the route data
 struct RouteIndex(usize);
 
-
 struct Stop {
     id: StopId,
     transfers_index_start: usize,
@@ -160,7 +166,6 @@ struct Stop {
     transfers_count: usize,
     stop_routes_count: usize,
 }
-
 
 impl Hash for Stop {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -198,7 +203,6 @@ impl StopsData {
         self.get_routes_for(stop)
     }
 
-
     fn get_transfers(&self, stop: &Stop) -> &[Transfer] {
         let start = stop.transfers_index_start;
         let end = start + stop.transfers_count;
@@ -209,9 +213,7 @@ impl StopsData {
 fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, stops: StopsData) {
     let k = 0usize;
 
-    let mut labels_by_stop = HashMap::from(
-        [(source, HashMap::from([(k, departure)]))]
-    );
+    let mut labels_by_stop = HashMap::from([(source, HashMap::from([(k, departure)]))]);
 
     let mut earliest_arrivals = HashMap::from([(k, departure)]);
     let mut marked_stops = HashSet::from([&source]);
@@ -219,7 +221,10 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
 
     while marked_stops.len() > 0usize {
         // Accumulate routes serving marked stops from previous round
-        let routes_at_stop: HashMap<&usize, &[usize]> = marked_stops.iter().map(|stop| (*stop, stops.get_routes(stop))).collect();
+        let routes_at_stop: HashMap<&usize, &[usize]> = marked_stops
+            .iter()
+            .map(|stop| (*stop, stops.get_routes(stop)))
+            .collect();
 
         queue.clear();
         for p in marked_stops.iter() {
@@ -233,7 +238,8 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
                     Some(p_other) => {
                         let route_value = &routes.routes[*route];
                         let sequence = &routes.get_stop_sequence(route_value, p).unwrap();
-                        let sequence_other = &routes.get_stop_sequence(route_value, p_other).unwrap();
+                        let sequence_other =
+                            &routes.get_stop_sequence(route_value, p_other).unwrap();
 
                         // If p comes before p' (p_other) replace p' with p
                         if sequence < sequence_other {
@@ -247,11 +253,10 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
         marked_stops.clear();
 
         for (route, p) in &queue {
-
             // Go through each stop of route starting with p
             let route = &routes.routes[**route];
             let stops = routes.get_route_stops(route);
-            let current_trip: Option<&[StopTime]> = None;
+            let mut current_trip: Option<&[StopTime]> = None;
 
             let start_sequence = stops.iter().position(|stop| &stop == p).unwrap();
             for sequence in start_sequence..stops.len() {
@@ -278,11 +283,29 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
                     }
                 }
 
+                // If we have None for a time value, it can be treated as infinite. No arrival time -> Infinite time to arrive
                 // Can we catch an earlier trip?
+                let previous_arrival = labels_by_stop
+                    .get(stop)
+                    .and_then(|time_by_round| time_by_round.get(&(k - 1)));
 
-                let last_round_label = labels_by_stop.get(stop).and_then(|time_by_round| time_by_round.get(&(k - 1)));
-                
+                // Pseudo code example code uses departure but this is probably a typo as text uses
+                // arrival which seems to make more sense too
+                let arrival_time = current_trip.map(|trip| &trip[sequence].arrival_time);
 
+                // Using is_some as let Some(time) chained with comparison is currently unstable
+                // And it would need to be wrapped in Some again for comparison
+
+                //TODO simplify this
+                match (previous_arrival, arrival_time) {
+                    (Some(previous), None /* "Infinite" */) => {
+                        current_trip = routes.get_earliest_departing_trip(stop, route, previous);
+                    }
+                    (Some(previous), Some(arrival)) if previous <= &arrival => {
+                        current_trip = routes.get_earliest_departing_trip(stop, route, previous);
+                    }
+                    (None /* "Infinite" */, Some(_)) | (Some(_), _) | (None, None) => {}
+                }
             }
         }
     }
