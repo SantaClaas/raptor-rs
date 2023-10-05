@@ -280,7 +280,13 @@ enum Connection {
     FootPath { source: usize, transfer: usize },
 }
 
-fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, stops: StopsData) -> Vec<HashMap<usize, Connection>> {
+fn raptor(
+    source: usize,
+    target: usize,
+    departure: &Time,
+    routes: RoutesData,
+    stops: StopsData,
+) -> Vec<HashMap<usize, Connection>> {
     let mut k = 0usize;
 
     // For each round the best arrival by stop. Index is amount of transfers or k - 1
@@ -312,12 +318,10 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
             let routes_serving_p = routes_at_stop[p];
 
             for route in routes_serving_p {
-
                 if let Some(p_other) = queue.get(route) {
                     let route_value = &routes.routes[*route];
                     let sequence = &routes.get_stop_sequence(route_value, p).unwrap();
-                    let sequence_other =
-                        &routes.get_stop_sequence(route_value, p_other).unwrap();
+                    let sequence_other = &routes.get_stop_sequence(route_value, p_other).unwrap();
 
                     // If p comes before p' (p_other) replace p' with p
                     if sequence < sequence_other {
@@ -390,41 +394,42 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
             }
         }
 
+        // Can not change marked stops while iterating so we save them here temporarily
+        let mut new_marks = HashSet::new();
         // Look at foot-paths
         for p in &marked_stops {
             let stop = &stops.stops[**p];
             let start = stop.transfers_index_start;
-            let end = start + stop.transfers_count;
-
-            let transfers = &stops.transfers[start..end];
 
             let arrival_at_p = current_round_labels.get(*p).cloned().unwrap_or(Infinite);
 
-            for transfer in transfers {
+            for transfer_index in 0..stop.transfers_count {
+                let transfer = &stops.transfers[start + transfer_index];
                 let arrival_by_foot = arrival_at_p + transfer.time;
+                
+                let current_arrival_target = current_round_labels
+                    .get(&transfer.target)
+                    .cloned()
+                    .unwrap_or(Infinite);
 
-                current_round_labels
-                    .entry(transfer.target)
-                    .and_modify(|arrival| {
-                        if arrival_by_foot < *arrival {
-                            //TODO add footpath to connections
-                            //TODO mark stop as improved
-
-                            *arrival = arrival_by_foot
-                        }
-                    })
-                    .or_insert(arrival_by_foot);
-                // let current_arrival_target = current_round_labels
-                //     .get(&transfer.target)
-                //     .cloned()
-                //     .unwrap_or(Infinite);
-                //
-                // if arrival_by_foot < current_arrival_target {
-                //     // Improved arrival time by walking
-                //     current_round_labels.insert(transfer.target, arrival_by_foot);
-                // }
+                if arrival_by_foot < current_arrival_target {
+                    // Improved arrival time by walking
+                    current_round_labels.insert(transfer.target, arrival_by_foot);
+                    // Add footpath to connections
+                    let connection = Connection::FootPath {
+                        source: **p,
+                        transfer: transfer_index,
+                    };
+                    connection_by_stop.insert(transfer.target, connection);
+                    // Mark stop as improved
+                    new_marks.insert(&transfer.target);
+                    // marked_stops.insert(&transfer.target);
+                }
             }
         }
+
+        // Add collected improved stops
+        marked_stops.extend(new_marks);
 
         labels_by_round.push(current_round_labels);
         connections_by_round.push(connection_by_stop);
