@@ -2,9 +2,7 @@ use crate::raptor::Time::Infinite;
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use std::iter::Map;
 use std::ops::Add;
-use std::slice::Chunks;
 
 /// Represents a time stamp for various structures in RAPTOR.
 /// The value represents a time after midnight for a day. It can be greater than 24h if a stop on a
@@ -44,20 +42,6 @@ impl PartialEq for Time {
     }
 }
 
-impl Add for &Time {
-    type Output = Time;
-
-    fn add(self, other: Self) -> Self::Output {
-        match (self, other) {
-            (Infinite, _) => Infinite,
-            (_, Infinite) => Infinite,
-            (Time::Finite(self_value), Time::Finite(other_value)) => {
-                Time::Finite(self_value + other_value)
-            }
-        }
-    }
-}
-
 impl Add for Time {
     type Output = Time;
 
@@ -71,26 +55,6 @@ impl Add for Time {
         }
     }
 }
-
-struct NumberOfTrips(u32);
-
-struct StopId(String);
-
-impl PartialEq<Self> for StopId {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-
-impl Eq for StopId {}
-
-impl Hash for StopId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
-    }
-}
-
-struct Trip {}
 
 /// The time a trip stops at a stop
 struct StopTime {
@@ -129,7 +93,6 @@ struct RoutesData {
 }
 
 impl RoutesData {
-    //TODO Test getting trip
     fn get_stop_times(&self, route: &Route) -> &[StopTime] {
         let start = route.stop_times_start_index;
         let end = start + (route.number_of_trips * route.number_of_stops);
@@ -150,12 +113,6 @@ impl RoutesData {
         route_stops
             .iter()
             .position(|route_stop| &route_stop == &stop)
-    }
-
-    fn get_trips(&self, route: &Route) -> Chunks<StopTime> {
-        // Access stop times of all trips on route
-        let stop_times = self.get_stop_times(route);
-        stop_times.chunks(route.number_of_stops)
     }
 
     /// Get the earliest trip departing from a stop along the route after some time
@@ -184,35 +141,8 @@ impl RoutesData {
     }
 }
 
-struct Label {
-    trips: NumberOfTrips,
-    earliest_known_arrival: Time,
-}
-
-// /// A route that serves a stop
-// struct StopRoute {
-//     id: String,
-// }
-//
-// impl Hash for StopRoute {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         self.id.hash(state)
-//     }
-// }
-//
-// impl PartialEq<Self> for StopRoute {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.id.eq(&other.id)
-//     }
-// }
-//
-// impl Eq for StopRoute {}
-
-/// The index of a route in the route data
-struct RouteIndex(usize);
-
 struct Stop {
-    id: StopId,
+    id: String,
     transfers_index_start: usize,
     stop_routes_index_start: usize,
     transfers_count: usize,
@@ -258,12 +188,6 @@ impl StopsData {
     fn get_routes(&self, stop: &usize) -> &[usize] {
         let stop = &self.stops[*stop];
         self.get_routes_for(stop)
-    }
-
-    fn get_transfers(&self, stop: &Stop) -> &[Transfer] {
-        let start = stop.transfers_index_start;
-        let end = start + stop.transfers_count;
-        &self.transfers[start..end]
     }
 }
 
@@ -406,7 +330,7 @@ fn raptor(
             for transfer_index in 0..stop.transfers_count {
                 let transfer = &stops.transfers[start + transfer_index];
                 let arrival_by_foot = arrival_at_p + transfer.time;
-                
+
                 let current_arrival_target = current_round_labels
                     .get(&transfer.target)
                     .cloned()
