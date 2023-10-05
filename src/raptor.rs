@@ -1,32 +1,74 @@
+use crate::raptor::Time::Infinite;
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::iter::Map;
+use std::ops::Add;
 use std::slice::Chunks;
 
 /// Represents a time stamp for various structures in RAPTOR.
 /// The value represents a time after midnight for a day. It can be greater than 24h if a stop on a
 /// trip is reached the next day after midnight
-#[derive(Debug)]
-struct Time(u64);
+#[derive(Copy, Clone, Debug)]
+enum Time {
+    Finite(u64),
+    Infinite,
+}
 
 impl Eq for Time {}
 
 impl Ord for Time {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
+        match (self, other) {
+            (Infinite, Infinite) => Ordering::Equal,
+            (Infinite, Time::Finite(_)) => Ordering::Greater,
+            (Time::Finite(_), Infinite) => Ordering::Less,
+            (Time::Finite(value), Time::Finite(other)) => value.cmp(other),
+        }
     }
 }
 
 impl PartialOrd for Time {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 
 impl PartialEq for Time {
     fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
+        match (self, other) {
+            (Infinite, Infinite) => true,
+            (Infinite, Time::Finite(_)) | (Time::Finite(_), Infinite) => false,
+            (Time::Finite(value), Time::Finite(other)) => value.eq(other),
+        }
+    }
+}
+
+impl Add for &Time {
+    type Output = Time;
+
+    fn add(self, other: Self) -> Self::Output {
+        match (self, other) {
+            (Infinite, _) => Infinite,
+            (_, Infinite) => Infinite,
+            (Time::Finite(self_value), Time::Finite(other_value)) => {
+                Time::Finite(self_value + other_value)
+            }
+        }
+    }
+}
+
+impl Add for Time {
+    type Output = Time;
+
+    fn add(self, other: Self) -> Self::Output {
+        match (self, other) {
+            (Infinite, _) => Infinite,
+            (_, Infinite) => Infinite,
+            (Time::Finite(self_value), Time::Finite(other_value)) => {
+                Time::Finite(self_value + other_value)
+            }
+        }
     }
 }
 
@@ -117,18 +159,28 @@ impl RoutesData {
     }
 
     /// Get the earliest trip departing from a stop along the route after some time
+    /// returns the number of the trip in the route (index in sequence of trips for route) and the
+    /// trip stop times
     fn get_earliest_departing_trip(
         &self,
-        from_stop_id: &usize,
         route: &Route,
+        // The sequence of the stop on the route for which the next trip departing should be found
+        from_stop_sequence: &usize,
         after: &Time,
-    ) -> Option<&[StopTime]> {
-        // Only the iterator is mutable
-        let mut trips = self.get_trips(route);
-        self.get_stop_sequence(route, &from_stop_id)
-            .and_then(|from_stop_sequence| {
-                trips.find(|trip| &trip[from_stop_sequence].departure_time > after)
-            })
+    ) -> Option<(usize, &[StopTime])> {
+        // Assume we get have the stop_sequence
+        let stop_times = self.get_stop_times(route);
+        for trip_index in 0..route.number_of_trips {
+            let trip_start = trip_index * route.number_of_stops;
+            let stop_time = &stop_times[trip_start + from_stop_sequence];
+            if &stop_time.departure_time > after {
+                let trip_end = trip_start + route.number_of_trips;
+                let trip = &stop_times[trip_start..trip_end];
+                return Some((trip_index, trip));
+            }
+        }
+
+        return None;
     }
 }
 
@@ -182,7 +234,12 @@ impl PartialEq<Self> for Stop {
 impl Eq for Stop {}
 
 /// A transfer that leaves a stop and allows reaching another stop by foot path
-struct Transfer {}
+struct Transfer {
+    /// The target stop that can be reached by foot through this foot-path
+    target: usize,
+    /// Time it takes to reach the target stop by foot
+    time: Time,
+}
 
 struct StopsData {
     transfers: Vec<Transfer>,
@@ -210,16 +267,40 @@ impl StopsData {
     }
 }
 
-fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, stops: StopsData) {
-    let k = 0usize;
+/// A connection between two stops
+enum Connection {
+    /// By using a trip with on a route with the respective transportation
+    Connection {
+        route: usize,
+        trip_number: usize,
+        boarded_at_stop: usize,
+        exited_at_stop: usize,
+    },
+    /// By walking from a source stop (index in stops data structure) and the connected transfer (index)
+    FootPath { source: usize, transfer: usize },
+}
 
-    let mut labels_by_stop = HashMap::from([(source, HashMap::from([(k, departure)]))]);
+fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, stops: StopsData) -> Vec<HashMap<usize, Connection>> {
+    let mut k = 0usize;
 
-    let mut earliest_arrivals = HashMap::from([(k, departure)]);
+    // For each round the best arrival by stop. Index is amount of transfers or k - 1
+    let mut labels_by_round = vec![HashMap::from([(source, departure.clone())])];
+    // The best arrival time for any stop without caring about the round
+    let mut best_by_stop = HashMap::from([(source, departure)]);
+    // Connections to reconstruct journey
+    let mut connections_by_round = Vec::new();
+
     let mut marked_stops = HashSet::from([&source]);
     let mut queue: HashMap<&usize, &usize> = HashMap::new();
 
     while marked_stops.len() > 0usize {
+        k += 1;
+        let last_round_labels = &labels_by_round[(k - 1)];
+        let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
+        // Best connection for current round by the stop the connection reaches
+        // For journey reconstruction
+        let mut connection_by_stop: HashMap<usize, Connection> = HashMap::new();
+
         // Accumulate routes serving marked stops from previous round
         let routes_at_stop: HashMap<&usize, &[usize]> = marked_stops
             .iter()
@@ -227,91 +308,134 @@ fn raptor(source: usize, target: usize, departure: &Time, routes: RoutesData, st
             .collect();
 
         queue.clear();
-        for p in marked_stops.iter() {
+        for p in &marked_stops {
             let routes_serving_p = routes_at_stop[p];
 
             for route in routes_serving_p {
-                match queue.get(route) {
-                    None => {
+
+                if let Some(p_other) = queue.get(route) {
+                    let route_value = &routes.routes[*route];
+                    let sequence = &routes.get_stop_sequence(route_value, p).unwrap();
+                    let sequence_other =
+                        &routes.get_stop_sequence(route_value, p_other).unwrap();
+
+                    // If p comes before p' (p_other) replace p' with p
+                    if sequence < sequence_other {
                         &queue.insert(route, p);
                     }
-                    Some(p_other) => {
-                        let route_value = &routes.routes[*route];
-                        let sequence = &routes.get_stop_sequence(route_value, p).unwrap();
-                        let sequence_other =
-                            &routes.get_stop_sequence(route_value, p_other).unwrap();
-
-                        // If p comes before p' (p_other) replace p' with p
-                        if sequence < sequence_other {
-                            &queue.insert(route, p);
-                        }
-                    }
+                    continue;
                 }
+
+                &queue.insert(route, p);
             }
         }
 
         marked_stops.clear();
 
-        for (route, p) in &queue {
+        for (route_index, p) in &queue {
             // Go through each stop of route starting with p
-            let route = &routes.routes[**route];
+            let route = &routes.routes[**route_index];
             let stops = routes.get_route_stops(route);
-            let mut current_trip: Option<&[StopTime]> = None;
+            let mut current_trip: Option<(usize, &[StopTime], &usize)> = None;
 
+            // Traverse stops in route starting with marked stop
             let start_sequence = stops.iter().position(|stop| &stop == p).unwrap();
-            for sequence in start_sequence..stops.len() {
-                let stop = &stops[sequence];
+            for stop_sequence in start_sequence..stops.len() {
+                // Stop (index) of the stop in the trip we traverse
+                let trip_stop = &stops[stop_sequence];
 
-                if let Some(trip) = current_trip {
+                if let Some((trip_number, trip_times, boarded_at_stop)) = current_trip {
                     // Earliest known arrival at stop for any route and trip (for local pruning?)
-                    let earliest_arrival = earliest_arrivals.get(&stop);
+                    let earliest_arrival = best_by_stop.get(&trip_stop).unwrap_or(&&Infinite);
                     // Earliest arrival at target stop for journey. Used for target pruning.
                     // (We don't need to look at stops that arrive after the target arrival if we
                     // have one)
-                    let earliest_arrival_target = earliest_arrivals.get(&target);
-
+                    let earliest_arrival_target = best_by_stop.get(&target).unwrap_or(&&Infinite);
                     // Arrival time for the current stop on the current trip for the current route
-                    let arrival_time = &trip[sequence].arrival_time;
+                    let arrival_time = &trip_times[stop_sequence].arrival_time;
                     // Can label be improved
 
-                    if Some(&arrival_time) < min(earliest_arrival, earliest_arrival_target) {
-                        let time_by_round = labels_by_stop.entry(*stop).or_default();
-                        time_by_round.insert(k, arrival_time);
-                        earliest_arrivals.insert(*stop, arrival_time);
-                        //TODO arr trip to reconstruct journey
-                        marked_stops.insert(&stop);
+                    //TODO consider minimum time it takes to transfer between lines/routes/trips
+                    //TODO check if we can drop off at stop
+                    if &arrival_time < min(earliest_arrival, earliest_arrival_target) {
+                        current_round_labels.insert(*trip_stop, *arrival_time);
+                        best_by_stop.insert(*trip_stop, arrival_time);
+                        // Save connection to reconstruct journey
+                        let connection = Connection::Connection {
+                            route: **route_index,
+                            trip_number,
+                            boarded_at_stop: *boarded_at_stop,
+                            exited_at_stop: *trip_stop,
+                        };
+                        connection_by_stop.insert(*trip_stop, connection);
+                        // Mark as improved
+                        marked_stops.insert(&trip_stop);
                     }
                 }
 
-                // If we have None for a time value, it can be treated as infinite. No arrival time -> Infinite time to arrive
                 // Can we catch an earlier trip?
-                let previous_arrival = labels_by_stop
-                    .get(stop)
-                    .and_then(|time_by_round| time_by_round.get(&(k - 1)));
+                let previous_arrival = last_round_labels.get(trip_stop).unwrap_or(&&Infinite);
 
                 // Pseudo code example code uses departure but this is probably a typo as text uses
-                // arrival which seems to make more sense too
-                let arrival_time = current_trip.map(|trip| &trip[sequence].arrival_time);
+                // arrival which makes more sense to my understanding of the algorithm
+                let arrival_time = &current_trip
+                    .map(|(_, trip, _)| &trip[stop_sequence].arrival_time)
+                    .unwrap_or(&Infinite);
 
-                // Using is_some as let Some(time) chained with comparison is currently unstable
-                // And it would need to be wrapped in Some again for comparison
-
-                //TODO simplify this
-                match (previous_arrival, arrival_time) {
-                    (Some(previous), None /* "Infinite" */) => {
-                        current_trip = routes.get_earliest_departing_trip(stop, route, previous);
-                    }
-                    (Some(previous), Some(arrival)) if previous <= &arrival => {
-                        current_trip = routes.get_earliest_departing_trip(stop, route, previous);
-                    }
-                    (None /* "Infinite" */, Some(_)) | (Some(_), _) | (None, None) => {}
+                if previous_arrival <= arrival_time {
+                    current_trip = routes
+                        .get_earliest_departing_trip(route, &stop_sequence, previous_arrival)
+                        .map(|(trip_number, trip_times)| (trip_number, trip_times, trip_stop));
                 }
             }
         }
+
+        // Look at foot-paths
+        for p in &marked_stops {
+            let stop = &stops.stops[**p];
+            let start = stop.transfers_index_start;
+            let end = start + stop.transfers_count;
+
+            let transfers = &stops.transfers[start..end];
+
+            let arrival_at_p = current_round_labels.get(*p).cloned().unwrap_or(Infinite);
+
+            for transfer in transfers {
+                let arrival_by_foot = arrival_at_p + transfer.time;
+
+                current_round_labels
+                    .entry(transfer.target)
+                    .and_modify(|arrival| {
+                        if arrival_by_foot < *arrival {
+                            //TODO add footpath to connections
+                            //TODO mark stop as improved
+
+                            *arrival = arrival_by_foot
+                        }
+                    })
+                    .or_insert(arrival_by_foot);
+                // let current_arrival_target = current_round_labels
+                //     .get(&transfer.target)
+                //     .cloned()
+                //     .unwrap_or(Infinite);
+                //
+                // if arrival_by_foot < current_arrival_target {
+                //     // Improved arrival time by walking
+                //     current_round_labels.insert(transfer.target, arrival_by_foot);
+                // }
+            }
+        }
+
+        labels_by_round.push(current_round_labels);
+        connections_by_round.push(connection_by_stop);
     }
+
+    return connections_by_round;
 }
 
 #[test]
 fn huh() {
-    assert_eq!(Time(3), Time(3))
+    assert_eq!(Time::Finite(3), Time::Finite(3))
 }
+
+//TODO Benchmark passing time as reference (Arc/Ref or &) vs copying/cloning time values...If that even matters at all
