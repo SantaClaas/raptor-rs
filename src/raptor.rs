@@ -181,6 +181,7 @@ impl RoutesData {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Stop {
     pub(crate) id: String,
     pub(crate) transfers_index_start: usize,
@@ -232,7 +233,7 @@ impl StopsData {
 }
 
 /// A connection between two stops
-enum Connection {
+pub(crate) enum Connection {
     /// By using a trip with on a route with the respective transportation
     Connection {
         route: usize,

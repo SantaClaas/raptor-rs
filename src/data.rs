@@ -1,13 +1,14 @@
 use crate::raptor;
-use crate::raptor::{Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
-use rusqlite::Connection;
+use crate::raptor::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
 use rusqlite::Error;
+use rusqlite::{params, Connection};
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::convert::identity;
 use std::hash::{Hash, Hasher};
 use std::mem;
+use std::time::Duration;
 
 #[deprecated]
 pub fn assemble_stops_data(
@@ -231,6 +232,7 @@ struct PartialStop {
 struct GetStopsReturn {
     transfers: Vec<Transfer>,
     stops: Vec<PartialStop>,
+    /// The index of the stop representing the stop id in the stops vector
     index_by_stop_id: HashMap<String, usize>,
 }
 fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
@@ -524,15 +526,15 @@ fn assemble_raptor_data(
         // There indeed exist stops where no one stops in GTFS
         // Maybe they are stations that group stops but the ones I have encountered so far aren't
         let mut route_indices = route_indices_by_stop_index.remove(&stop_index);
-        if route_indices.is_none() {
-            continue;
-        }
 
-        let mut route_indices = route_indices.unwrap();
-
-        let stop_routes_count = route_indices.len();
-
-        stop_routes.append(&mut route_indices);
+        let stop_routes_count = match route_indices {
+            Some(mut route_indices) => {
+                let count = route_indices.len();
+                stop_routes.append(&mut route_indices);
+                count
+            }
+            None => 0,
+        };
 
         // Complete stop
         stops.push(Stop {
@@ -560,12 +562,48 @@ fn assemble_raptor_data(
 fn how_fast() {
     let connection = Connection::open("database.db").unwrap();
 
-    let GetStopsReturn {transfers, stops, index_by_stop_id}= get_stops(&connection).unwrap();
+    let GetStopsReturn {
+        transfers,
+        stops,
+        index_by_stop_id,
+    } = get_stops(&connection).unwrap();
 
-    let step_2_result = get_routes(&connection, index_by_stop_id).unwrap();
+    //TODO remove debug clone clown
+    let step_2_result = get_routes(&connection, index_by_stop_id.clone()).unwrap();
 
-    let (routes_data,stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
+    let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
 
+    let dream_source_stop_id = "1808";
+    let dream_target_stop_id = "1811";
+    let source_index = index_by_stop_id.get(dream_source_stop_id).unwrap();
+    let target_index = index_by_stop_id.get(dream_target_stop_id).unwrap();
+    let departure = Time::from(12 * 60 * 60);
 
+    //TODO remove clown copy
+    let stops = stops_data.stops. clone();
+    let results = raptor(
+        *source_index,
+        *target_index,
+        &departure,
+        routes_data,
+        stops_data,
+    );
 
+    let mut statement = connection
+        .prepare("SELECT name FROM stops WHERE id = :id")
+        .unwrap();
+
+    let mut round = 1;
+    for result in results {
+        println!("Round {round} visited...");
+        for (stop_index, _) in result {
+            let stop_id = &stops[stop_index].id;
+            let stop_name = statement.query_row(params![":id", stop_id], |row| row.get::<_, String>("name")).unwrap();
+
+            print!("{stop_name} ")
+        }
+        println!();
+
+        round += 1;
+    }
 }
