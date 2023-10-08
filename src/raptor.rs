@@ -1,6 +1,7 @@
-use crate::raptor::Time::Infinite;
+use crate::raptor::Time::{Finite, Infinite};
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
 
@@ -8,7 +9,7 @@ use std::ops::Add;
 /// The value represents a time after midnight for a day. It can be greater than 24h if a stop on a
 /// trip is reached the next day after midnight
 #[derive(Copy, Clone, Debug)]
-enum Time {
+pub(crate) enum Time {
     Finite(u64),
     Infinite,
 }
@@ -19,9 +20,9 @@ impl Ord for Time {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Infinite, Infinite) => Ordering::Equal,
-            (Infinite, Time::Finite(_)) => Ordering::Greater,
-            (Time::Finite(_), Infinite) => Ordering::Less,
-            (Time::Finite(value), Time::Finite(other)) => value.cmp(other),
+            (Infinite, Finite(_)) => Ordering::Greater,
+            (Finite(_), Infinite) => Ordering::Less,
+            (Finite(value), Finite(other)) => value.cmp(other),
         }
     }
 }
@@ -36,8 +37,8 @@ impl PartialEq for Time {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Infinite, Infinite) => true,
-            (Infinite, Time::Finite(_)) | (Time::Finite(_), Infinite) => false,
-            (Time::Finite(value), Time::Finite(other)) => value.eq(other),
+            (Infinite, Finite(_)) | (Finite(_), Infinite) => false,
+            (Finite(value), Finite(other)) => value.eq(other),
         }
     }
 }
@@ -49,35 +50,76 @@ impl Add for Time {
         match (self, other) {
             (Infinite, _) => Infinite,
             (_, Infinite) => Infinite,
-            (Time::Finite(self_value), Time::Finite(other_value)) => {
-                Time::Finite(self_value + other_value)
+            (Finite(self_value), Finite(other_value)) => {
+                Finite(self_value + other_value)
             }
         }
     }
 }
 
-/// The time a trip stops at a stop
-struct StopTime {
-    departure_time: Time,
-    arrival_time: Time,
+impl From<u64> for Time {
+    fn from(value: u64) -> Self {
+        Finite(value)
+    }
+}
+
+impl Display for Time {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Infinite => write!(formatter, "Time Infinite"),
+            Finite(seconds) => {
+                // Idk how to do basic math
+                let (seconds, minutes) = (seconds % 60, seconds / 60);
+                let (seconds, minutes, hours) = (seconds, minutes % 60, minutes / 60 );
+                write!(formatter, "Time {hours}:{minutes}:{seconds}")
+            }
+        }
+    }
+}
+
+#[test]
+fn format_time() {
+    // Arrange
+    // hours > 24 is valid GTFS time to signify trips that extend to the next day
+    let hours = 69;
+    let minutes = 4;
+    let seconds = 20;
+
+    let hours_in_seconds = hours * 60 * 60;
+    let minutes_in_seconds = minutes * 60;
+
+    let time = Time::Finite(hours_in_seconds + minutes_in_seconds + seconds);
+    let expected = format!("Time {hours}:{minutes}:{seconds}");
+
+    // Act
+    let actual = format!("{}", time);
+    // Assert
+    assert_eq!(expected, actual);
+}
+
+/// The departure and arrival time of a trip at a stop
+pub(crate) struct StopTime {
+    pub(crate) departure_time: Time,
+    pub(crate) arrival_time: Time,
 }
 
 /// A route or line in a transportation network. A route has multiple trips a day.
 /// In contrast to GTFS data a route has always the same sequence of stops in its trips.
 /// This means there is a separate route for every trip in GTFS where the sequence of stops or
 /// direction is not the same
-struct Route {
-    number_of_trips: usize,
+pub(crate) struct Route {
+    /// Number of trips in a route. You can get the length of the block in StopTimes that represent
+    /// all trips of this route by multiplying this with number_of_stops
+    pub(crate) number_of_trips: usize,
 
     /// The number of stops per trip of this route. The number of trips is the same per trip.
-    number_of_stops: usize,
+    pub(crate) number_of_stops: usize,
 
-    /// Pointer to the RouteStops list representing the index where the first stop for the route
-    /// starts
-    route_stops_start_index: usize,
+    /// Pointer to the index that starts the block in the RouteStops array for the stops of this route
+    pub(crate) route_stops_start_index: usize,
 
-    /// Pointer to the StopTimes list representing the trips that operate on the route
-    stop_times_start_index: usize,
+    /// Pointer to the index that starts the first block of StopTimes for the first trip
+    pub(crate) stop_times_start_index: usize,
 }
 
 struct RoutesData {
@@ -141,12 +183,12 @@ impl RoutesData {
     }
 }
 
-struct Stop {
-    id: String,
-    transfers_index_start: usize,
-    stop_routes_index_start: usize,
-    transfers_count: usize,
-    stop_routes_count: usize,
+pub(crate) struct Stop {
+    pub(crate) id: String,
+    pub(crate) transfers_index_start: usize,
+    pub(crate) stop_routes_index_start: usize,
+    pub(crate) transfers_count: usize,
+    pub(crate) stop_routes_count: usize,
 }
 
 impl Hash for Stop {
@@ -164,11 +206,11 @@ impl PartialEq<Self> for Stop {
 impl Eq for Stop {}
 
 /// A transfer that leaves a stop and allows reaching another stop by foot path
-struct Transfer {
+pub(crate) struct Transfer {
     /// The target stop that can be reached by foot through this foot-path
-    target: usize,
+    pub(crate) target: usize,
     /// Time it takes to reach the target stop by foot
-    time: Time,
+    pub(crate) time: Time,
 }
 
 struct StopsData {
@@ -204,7 +246,7 @@ enum Connection {
     FootPath { source: usize, transfer: usize },
 }
 
-fn raptor(
+pub fn raptor(
     source: usize,
     target: usize,
     departure: &Time,
@@ -223,7 +265,7 @@ fn raptor(
     let mut marked_stops = HashSet::from([&source]);
     let mut queue: HashMap<&usize, &usize> = HashMap::new();
 
-    while marked_stops.len() > 0usize {
+    while !marked_stops.is_empty() {
         k += 1;
         let last_round_labels = &labels_by_round[(k - 1)];
         let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
@@ -254,7 +296,7 @@ fn raptor(
                     continue;
                 }
 
-                &queue.insert(route, p);
+                let _ = &queue.insert(route, p);
             }
         }
 
@@ -364,7 +406,7 @@ fn raptor(
 
 #[test]
 fn huh() {
-    assert_eq!(Time::Finite(3), Time::Finite(3))
+    assert_eq!(Finite(3), Finite(3))
 }
 
 //TODO Benchmark passing time as reference (Arc/Ref or &) vs copying/cloning time values...If that even matters at all
