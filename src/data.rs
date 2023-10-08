@@ -1,5 +1,5 @@
 use crate::raptor;
-use crate::raptor::{Route, RoutesData, Stop, StopsData, StopTime, Time, Transfer};
+use crate::raptor::{Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
 use rusqlite::Connection;
 use rusqlite::Error;
 use std::cmp::Ordering;
@@ -226,9 +226,14 @@ struct PartialStop {
     transfers_count: usize,
     transfers_index_start: usize,
 }
-fn get_stops(
-    connection: &Connection,
-) -> Result<(Vec<Transfer>, Vec<PartialStop>, HashMap<String, usize>), Error> {
+
+/// A quick type to bundle the return from loading tops
+struct GetStopsReturn {
+    transfers: Vec<Transfer>,
+    stops: Vec<PartialStop>,
+    index_by_stop_id: HashMap<String, usize>,
+}
+fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
 
@@ -294,34 +299,42 @@ fn get_stops(
         });
     }
 
-    Ok((transfers, stops, index_by_stop_id))
+    Ok(GetStopsReturn {
+        transfers,
+        stops,
+        index_by_stop_id,
+    })
 }
 
-#[test]
-fn how_fast() {
-    let connection = Connection::open("database.db").unwrap();
+/// Just a quick struct to bundle return values from get_routes
+struct GetRoutesReturn {
+    trips_by_stops: HashMap<Vec<usize>, Vec<Trip>>,
+    trips_count: usize,
+    stop_times_count: usize,
+    route_stops_count: usize,
+}
 
-    let (transfers, partial_stops, index_by_stop_id) = get_stops(&connection).unwrap();
+fn get_routes(
+    connection: &Connection,
+    index_by_stop_id: HashMap<String, usize>,
+) -> Result<GetRoutesReturn, Error> {
     // We determine routes ourself by defining each trip with unique sequence of stops as a route
-    let mut statement = connection
-        .prepare(
-            // We need the trip id to reconstruct the route and trip although the RAPTOR algorithm
-            // does not care about it.
-            // I assume stop departure, stop id and trip stop count get very close to uniquely
-            // identifying a trip but are not guaranteed to not have collisions so we need to keep
-            // track of the trip id.
-            // We also need the trip id to group the stop ids as trips
-            "SELECT
+    let mut statement = connection.prepare(
+        // We need the trip id to reconstruct the route and trip although the RAPTOR algorithm
+        // does not care about it.
+        // I assume stop departure, stop id and trip stop count get very close to uniquely
+        // identifying a trip but are not guaranteed to not have collisions so we need to keep
+        // track of the trip id.
+        // We also need the trip id to group the stop ids as trips
+        "SELECT
                 trip_id,
                 stop_id,
                 arrival_time_seconds,
                 departure_time_seconds
             FROM stop_times
             ORDER BY trip_id, departure_time_seconds",
-            // "SELECT trip_id, stop_id, arrival_time_seconds, departure_time_seconds FROM stop_times ORDER BY departure_time_seconds"
-        )
-        .unwrap();
-    let mut rows = statement.query([]).unwrap();
+    )?;
+    let mut rows = statement.query([])?;
 
     // Trips by stop id sequence
     let mut trips_by_stops: HashMap<Vec<usize>, Vec<Trip>> = HashMap::new();
@@ -332,13 +345,15 @@ fn how_fast() {
     let mut trips_count: usize = 0;
     let mut stop_times_count: usize = 0;
     let mut route_stops_count: usize = 0;
-    while let Some(row) = rows.next().unwrap() {
-        let next_trip_id: String = row.get("trip_id").unwrap();
-        let stop_id: String = row.get("stop_id").unwrap();
+    while let Some(row) = rows.next()? {
+        let next_trip_id: String = row.get("trip_id")?;
+        let stop_id: String = row.get("stop_id")?;
+        // Assume we have all stops that can be referenced or this would reference a non-existent
+        // stop which is undefined behavior but would at least make this route unusable for end users
         let stop_index = index_by_stop_id.get(&stop_id).unwrap();
         let stop_time = StopTime {
-            arrival_time: row.get::<_, u64>("departure_time_seconds").unwrap().into(),
-            departure_time: row.get::<_, u64>("arrival_time_seconds").unwrap().into(),
+            arrival_time: row.get::<_, u64>("departure_time_seconds")?.into(),
+            departure_time: row.get::<_, u64>("arrival_time_seconds")?.into(),
         };
 
         current_trip = match current_trip {
@@ -384,8 +399,41 @@ fn how_fast() {
         stop_times_count += 1;
         current_stop_sequence.push(*stop_index);
     }
-    println!("ROUTES {}", trips_by_stops.len());
 
+    Ok(GetRoutesReturn {
+        trips_by_stops,
+        trips_count,
+        stop_times_count,
+        route_stops_count,
+    })
+}
+
+/// Assembles the data from the previous two steps of getting stops and route data into the final
+/// structs required by the RAPTOR algorithm
+///
+/// # Arguments
+///
+/// * `GetRoutesReturn {trips_by_stops, trips_count, stop_times_count, route_stops_count}`:
+/// * `partial_stops`:
+/// * `transfers`:
+///
+/// returns: (RoutesData, StopsData, Vec<String, Global>)
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+fn assemble_raptor_data(
+    GetRoutesReturn {
+        trips_by_stops,
+        trips_count,
+        stop_times_count,
+        route_stops_count,
+    }: GetRoutesReturn,
+    partial_stops: Vec<PartialStop>,
+    transfers: Vec<Transfer>,
+) -> (RoutesData, StopsData, Vec<String>) {
     // Final assembly RoutesData
 
     // Trip ids where the index refers to the number of the block that represents a trip in
@@ -460,7 +508,6 @@ fn how_fast() {
     };
 
     // Final assembly StopsData
-
     let mut stop_routes = Vec::with_capacity(stop_routes_count);
     let stops_length = partial_stops.len();
     let mut stops = Vec::with_capacity(stops_length);
@@ -506,4 +553,19 @@ fn how_fast() {
         stops,
         stop_routes,
     };
+
+    (routes_data, stops_data, trip_ids)
+}
+#[test]
+fn how_fast() {
+    let connection = Connection::open("database.db").unwrap();
+
+    let GetStopsReturn {transfers, stops, index_by_stop_id}= get_stops(&connection).unwrap();
+
+    let step_2_result = get_routes(&connection, index_by_stop_id).unwrap();
+
+    let (routes_data,stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
+
+
+
 }
