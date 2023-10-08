@@ -474,8 +474,15 @@ fn how_fast() {
         transfers_index_start,
     } in partial_stops.into_iter()
     {
-        // Assume every stop has to be visited by at least one route
-        let mut route_indices = route_indices_by_stop_index.remove(&stop_index).unwrap();
+        // There indeed exist stops where no one stops in GTFS
+        // Maybe they are stations that group stops but the ones I have encountered so far aren't
+        let mut route_indices = route_indices_by_stop_index.remove(&stop_index);
+        if route_indices.is_none() {
+            continue;
+        }
+
+        let mut route_indices = route_indices.unwrap();
+
         let stop_routes_count = route_indices.len();
 
         stop_routes.append(&mut route_indices);
