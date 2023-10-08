@@ -50,9 +50,7 @@ impl Add for Time {
         match (self, other) {
             (Infinite, _) => Infinite,
             (_, Infinite) => Infinite,
-            (Finite(self_value), Finite(other_value)) => {
-                Finite(self_value + other_value)
-            }
+            (Finite(self_value), Finite(other_value)) => Finite(self_value + other_value),
         }
     }
 }
@@ -70,7 +68,7 @@ impl Display for Time {
             Finite(seconds) => {
                 // Idk how to do basic math
                 let (seconds, minutes) = (seconds % 60, seconds / 60);
-                let (seconds, minutes, hours) = (seconds, minutes % 60, minutes / 60 );
+                let (seconds, minutes, hours) = (seconds, minutes % 60, minutes / 60);
                 write!(formatter, "Time {hours}:{minutes}:{seconds}")
             }
         }
@@ -122,16 +120,16 @@ pub(crate) struct Route {
     pub(crate) stop_times_start_index: usize,
 }
 
-struct RoutesData {
+pub(crate) struct RoutesData {
     /// This array is divided into blocks, and the i-th block contains all trips corresponding
     /// to route ri. Within a block, trips are sorted by departure time (at the first stop).
     /// Each trip is just a sequence of stop times, represented by the corresponding arrival
     /// and departure times.
-    stop_times: Vec<StopTime>,
-    routes: Vec<Route>,
+    pub(crate) stop_times: Vec<StopTime>,
+    pub(crate) routes: Vec<Route>,
     /// The stops for routes where segments represent stops sequence for routes
     /// The first entries belong to routes[0] then the next to route[1] and so on...
-    route_stops: Vec<usize>,
+    pub(crate) route_stops: Vec<usize>,
 }
 
 impl RoutesData {
@@ -213,11 +211,11 @@ pub(crate) struct Transfer {
     pub(crate) time: Time,
 }
 
-struct StopsData {
-    transfers: Vec<Transfer>,
-    stops: Vec<Stop>,
+pub(crate) struct StopsData {
+    pub(crate) transfers: Vec<Transfer>,
+    pub(crate) stops: Vec<Stop>,
     /// Not the routes themselves but the indices of in the route data
-    stop_routes: Vec<usize>,
+    pub(crate) stop_routes: Vec<usize>,
 }
 
 impl StopsData {

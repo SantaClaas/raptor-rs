@@ -1,5 +1,5 @@
 use crate::raptor;
-use crate::raptor::{Route, Stop, StopTime, Time, Transfer};
+use crate::raptor::{Route, RoutesData, Stop, StopsData, StopTime, Time, Transfer};
 use rusqlite::Connection;
 use rusqlite::Error;
 use std::cmp::Ordering;
@@ -226,12 +226,13 @@ struct PartialStop {
     transfers_count: usize,
     transfers_index_start: usize,
 }
-fn get_stops(connection: &Connection) -> Result<(Vec<Transfer> , Vec<PartialStop>, HashMap<&String, usize>), Error> {
+fn get_stops(
+    connection: &Connection,
+) -> Result<(Vec<Transfer>, Vec<PartialStop>, HashMap<String, usize>), Error> {
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
 
     let rows = statement.query_map([], |row| row.get::<_, String>("id"))?;
-
 
     // As we don't know the stop index of every target stop yet, we need to complete transfers later
     let mut partial_transfers: Vec<(&String, u64)> = Vec::new();
@@ -255,14 +256,14 @@ fn get_stops(connection: &Connection) -> Result<(Vec<Transfer> , Vec<PartialStop
             Some(stop_id) if stop_id != new_stop_id => {
                 // Complete stop
                 let stop = PartialStop {
-                    id: stop_id,
+                    id: stop_id.clone(),
                     transfers_count,
                     transfers_index_start,
                 };
 
                 stops.push(stop);
                 stop_index += 1;
-                index_by_stop_id.insert(&stop_id, stop_index);
+                index_by_stop_id.insert(stop_id, stop_index);
 
                 // Advance start pointers
                 //TODO support transfers
@@ -299,6 +300,8 @@ fn get_stops(connection: &Connection) -> Result<(Vec<Transfer> , Vec<PartialStop
 #[test]
 fn how_fast() {
     let connection = Connection::open("database.db").unwrap();
+
+    let (transfers, partial_stops, index_by_stop_id) = get_stops(&connection).unwrap();
     // We determine routes ourself by defining each trip with unique sequence of stops as a route
     let mut statement = connection
         .prepare(
@@ -321,7 +324,7 @@ fn how_fast() {
     let mut rows = statement.query([]).unwrap();
 
     // Trips by stop id sequence
-    let mut trips_by_stops: HashMap<Vec<String>, Vec<Trip>> = HashMap::new();
+    let mut trips_by_stops: HashMap<Vec<usize>, Vec<Trip>> = HashMap::new();
 
     let mut current_stop_sequence = Vec::new();
     let mut current_trip: Option<Trip> = None;
@@ -332,6 +335,7 @@ fn how_fast() {
     while let Some(row) = rows.next().unwrap() {
         let next_trip_id: String = row.get("trip_id").unwrap();
         let stop_id: String = row.get("stop_id").unwrap();
+        let stop_index = index_by_stop_id.get(&stop_id).unwrap();
         let stop_time = StopTime {
             arrival_time: row.get::<_, u64>("departure_time_seconds").unwrap().into(),
             departure_time: row.get::<_, u64>("arrival_time_seconds").unwrap().into(),
@@ -378,7 +382,7 @@ fn how_fast() {
         };
 
         stop_times_count += 1;
-        current_stop_sequence.push(stop_id);
+        current_stop_sequence.push(*stop_index);
     }
     println!("ROUTES {}", trips_by_stops.len());
 
@@ -398,26 +402,30 @@ fn how_fast() {
     let mut route_stops_start_index = 0;
     let mut stop_times_start_index = 0;
 
-    // Final assembly StopsData
-    let transfers_by_stop_id: HashMap<String, Vec<Transfer>> = HashMap::new();
-    let distinct_stops = HashSet::new();
-    let (transfers, partial_stops, index_by_stop_id) = get_stops(&connection).unwrap();
+    // For later final assembly StopsData
     let mut route_index = 0;
-    let mut route_indices_by_stop_id: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut route_indices_by_stop_index: HashMap<usize, Vec<usize>> = HashMap::new();
+    // To know allocation size later
+    let mut stop_routes_count = 0;
 
     // Go through each route
-    for (mut stop_ids, mut trips_ordered) in trips_by_stops.into_iter() {
-        let number_of_stops = stop_ids.len();
-        // Route Stops
-        for stop_id in stop_ids.into_iter() {
-            //TODO move get_stops before getting route data above and move this step to assemble route_stops in the initial loop
-            let stops_index = index_by_stop_id.get(&stop_id).unwrap();
-            route_stops.push(*stops_index);
+    for (mut stop_indices, mut trips_ordered) in trips_by_stops.into_iter() {
+        let number_of_stops = stop_indices.len();
 
+        let length = stop_indices.len();
+        stop_routes_count += length;
+        // Need to find out what routes arrive at what stop later for StopsData
+        for index in 0..length {
+            let stop_index = stop_indices[index];
             // Add for StopsData construction later
-            let routes = route_indices_by_stop_id.entry(stop_id).or_default();
+            let routes = route_indices_by_stop_index
+                .entry(stop_index.clone())
+                .or_default();
             routes.push(route_index);
         }
+
+        // Route Stops
+        route_stops.append(&mut stop_indices);
 
         let number_of_trips = trips_ordered.len();
         // Stop Times
@@ -445,5 +453,50 @@ fn how_fast() {
         stop_times_start_index += number_of_trips * number_of_stops;
     }
 
-    //TODO Final assembly StopsData
+    let routes_data = RoutesData {
+        stop_times,
+        routes,
+        route_stops,
+    };
+
+    // Final assembly StopsData
+
+    let mut stop_routes = Vec::with_capacity(stop_routes_count);
+    let stops_length = partial_stops.len();
+    let mut stops = Vec::with_capacity(stops_length);
+    let mut stop_index: usize = 0;
+
+    let mut stop_routes_index_start = 0;
+
+    for PartialStop {
+        id,
+        transfers_count,
+        transfers_index_start,
+    } in partial_stops.into_iter()
+    {
+        // Assume every stop has to be visited by at least one route
+        let mut route_indices = route_indices_by_stop_index.remove(&stop_index).unwrap();
+        let stop_routes_count = route_indices.len();
+
+        stop_routes.append(&mut route_indices);
+
+        // Complete stop
+        stops.push(Stop {
+            id,
+            transfers_index_start,
+            stop_routes_index_start,
+            transfers_count,
+            stop_routes_count,
+        });
+
+        stop_index += 1;
+        // Advance pointer
+        stop_routes_index_start += stop_routes_count;
+    }
+
+    let stops_data = StopsData {
+        transfers,
+        stops,
+        stop_routes,
+    };
 }
