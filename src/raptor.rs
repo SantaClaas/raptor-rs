@@ -171,7 +171,7 @@ impl RoutesData {
             let trip_start = trip_index * route.number_of_stops;
             let stop_time = &stop_times[trip_start + from_stop_sequence];
             if &stop_time.departure_time > after {
-                let trip_end = trip_start + route.number_of_trips;
+                let trip_end = trip_start + route.number_of_stops;
                 let trip = &stop_times[trip_start..trip_end];
                 return Some((trip_index, trip));
             }
