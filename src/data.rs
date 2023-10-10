@@ -1,4 +1,3 @@
-use crate::raptor;
 use crate::raptor::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
 use rusqlite::{named_params, Error};
 use rusqlite::Connection;
@@ -50,20 +49,20 @@ impl Ord for Trip {
     }
 }
 
-struct PartialStop {
+pub(crate) struct PartialStop {
     id: String,
     transfers_count: usize,
     transfers_index_start: usize,
 }
 
 /// A quick type to bundle the return from loading tops
-struct GetStopsReturn {
-    transfers: Vec<Transfer>,
-    stops: Vec<PartialStop>,
+pub(crate) struct GetStopsReturn {
+    pub(crate) transfers: Vec<Transfer>,
+    pub(crate) stops: Vec<PartialStop>,
     /// The index of the stop representing the stop id in the stops vector
-    index_by_stop_id: HashMap<String, usize>,
+    pub(crate) index_by_stop_id: HashMap<String, usize>,
 }
-fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
+pub(crate) fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
 
@@ -138,14 +137,14 @@ fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
 }
 
 /// Just a quick struct to bundle return values from get_routes
-struct GetRoutesReturn {
+pub(crate) struct GetRoutesReturn {
     trips_by_stops: HashMap<Vec<usize>, Vec<Trip>>,
     trips_count: usize,
     stop_times_count: usize,
     route_stops_count: usize,
 }
 
-fn get_routes(
+pub(crate) fn get_routes(
     connection: &Connection,
     index_by_stop_id: HashMap<String, usize>,
 ) -> Result<GetRoutesReturn, Error> {
@@ -255,7 +254,7 @@ fn get_routes(
 /// ```
 ///
 /// ```
-fn assemble_raptor_data(
+pub(crate) fn assemble_raptor_data(
     GetRoutesReturn {
         trips_by_stops,
         trips_count,
@@ -386,80 +385,4 @@ fn assemble_raptor_data(
     };
 
     (routes_data, stops_data, trip_ids)
-}
-#[test]
-fn how_fast() {
-    let connection = Connection::open("database.db").unwrap();
-
-    let GetStopsReturn {
-        transfers,
-        stops,
-        index_by_stop_id,
-    } = get_stops(&connection).unwrap();
-
-    //TODO remove debug clone clown
-    let step_2_result = get_routes(&connection, index_by_stop_id.clone()).unwrap();
-
-    let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
-
-    let dream_source_stop_id = "1808";
-    let dream_target_stop_id = "1811";
-    let source_index = *index_by_stop_id.get(dream_source_stop_id).unwrap();
-    let target_index = *index_by_stop_id.get(dream_target_stop_id).unwrap() ;
-    let departure = Time::from(12 * 60 * 60);
-
-
-    //TODO remove clown copy
-    let stops = stops_data.stops.clone();
-    let results = raptor(
-        source_index,
-        target_index,
-        &departure,
-        routes_data,
-        stops_data,
-    );
-
-    let mut statement = connection
-        .prepare("SELECT name FROM stops WHERE id = :id")
-        .unwrap();
-
-    let mut get_stop_name = |stop_index: usize| -> String {
-        let stop_id = &stops[stop_index].id;
-        statement
-            .query_row(named_params! {":id": stop_id}, |row| {
-                row.get::<_, String>("name")
-            })
-            .unwrap()
-    };
-
-    let from = get_stop_name(source_index);
-    let to = get_stop_name(target_index);
-    println!("From {from} to {to}");
-
-    let mut round = 1;
-    for result in results {
-        println!("Round {round} visited...");
-        for (stop_index, connection) in result {
-            let stop_name = get_stop_name(stop_index);
-
-            print!("\t{stop_name}:\t");
-            match connection {
-                raptor::Connection::Connection {
-                    route,
-                    trip_number,
-                    boarded_at_stop,
-                    exited_at_stop,
-
-                } => {
-                    let boarded = get_stop_name(boarded_at_stop);
-                    let exited = get_stop_name(exited_at_stop);
-                    println!("Route {route} Trip {trip_number} Connection {boarded} -> {exited}");
-                }
-                raptor::Connection::FootPath { .. } => {}
-            }
-        }
-        println!();
-
-        round += 1;
-    }
 }
