@@ -1,11 +1,14 @@
+extern crate core;
+
 mod data;
 mod raptor;
 
-use rusqlite::{Connection, named_params, Result, Statement};
 use crate::data::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn};
 use crate::raptor::{raptor, Time};
+use rusqlite::{named_params, Connection, Result, Statement};
 
-fn main() { let connection = Connection::open("database.db").unwrap();
+fn main() {
+    let connection = Connection::open("database.db").unwrap();
 
     let GetStopsReturn {
         transfers,
@@ -13,17 +16,21 @@ fn main() { let connection = Connection::open("database.db").unwrap();
         index_by_stop_id,
     } = get_stops(&connection).unwrap();
 
-    //TODO remove debug clone clown
-    let step_2_result = get_routes(&connection, index_by_stop_id.clone()).unwrap();
+    let step_2_result = get_routes(
+        &connection,
+        //TODO remove debug clone clown
+        index_by_stop_id.clone(),
+    )
+    .unwrap();
+
 
     let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
-
+    
     let dream_source_stop_id = "1808";
     let dream_target_stop_id = "1811";
     let source_index = *index_by_stop_id.get(dream_source_stop_id).unwrap();
-    let target_index = *index_by_stop_id.get(dream_target_stop_id).unwrap() ;
+    let target_index = *index_by_stop_id.get(dream_target_stop_id).unwrap();
     let departure = Time::from(12 * 60 * 60);
-
 
     //TODO remove clown copy
     let stops = stops_data.stops.clone();
@@ -54,7 +61,7 @@ fn main() { let connection = Connection::open("database.db").unwrap();
 
     let mut round = 1;
     for result in results {
-        println!("Round {round} visited...");
+        println!("Round {round} reached stops...");
         for (stop_index, connection) in result {
             let stop_name = get_stop_name(stop_index);
 
@@ -65,7 +72,6 @@ fn main() { let connection = Connection::open("database.db").unwrap();
                     trip_number,
                     boarded_at_stop,
                     exited_at_stop,
-
                 } => {
                     let boarded = get_stop_name(boarded_at_stop);
                     let exited = get_stop_name(exited_at_stop);
@@ -78,5 +84,4 @@ fn main() { let connection = Connection::open("database.db").unwrap();
 
         round += 1;
     }
-
 }

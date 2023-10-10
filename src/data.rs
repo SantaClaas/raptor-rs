@@ -1,12 +1,11 @@
 use crate::raptor::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
-use rusqlite::{named_params, Error};
 use rusqlite::Connection;
+use rusqlite::{named_params, Error, Row};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::identity;
 use std::hash::Hash;
 use std::mem;
-
 
 struct Trip {
     id: String,
@@ -66,13 +65,13 @@ pub(crate) fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
 
-    let rows = statement.query_map([], |row| row.get::<_, String>("id"))?;
+    let mut rows = statement.query([])?;
 
     // As we don't know the stop index of every target stop yet, we need to complete transfers later
     let mut partial_transfers: Vec<(&String, u64)> = Vec::new();
     let mut stops = Vec::new();
     let mut stop_index = 0;
-    let mut current_stop_id = None;
+    let mut current_stop_id: Option<String> = None;
 
     // For reverse lookup of stop indices when assembling route data
     let mut index_by_stop_id = HashMap::new();
@@ -80,42 +79,63 @@ pub(crate) fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error
     let mut transfers_index_start: usize = 0;
     let mut transfers_count: usize = 0;
 
-    //TODO fix not adding last stop????????????????????????????????????????????????????????????????
-    for new_stop_id in rows {
-        let new_stop_id = new_stop_id?;
-        //let transfer_target_id =//TODO
-        //let transfer_time=//TODO
+    loop {
+        match rows.next()? {
+            None => {
+                // Process last row if there was one (otherwise query result was empty)
+                if let Some(last_id) = current_stop_id {
+                    // Complete last stop
+                    let last_stop = PartialStop {
+                        id: last_id.clone(),
+                        transfers_count,
+                        transfers_index_start,
+                    };
 
-        current_stop_id = match current_stop_id {
-            None => Some(new_stop_id),
-            Some(old_stop_id) if old_stop_id != new_stop_id => {
-                // Complete stop
-                let stop = PartialStop {
-                    id: old_stop_id.clone(),
-                    transfers_count,
-                    transfers_index_start,
+                    stops.push(last_stop);
+                    index_by_stop_id.insert(last_id, stop_index);
+
+                    // No need to advance stop index or pointers anymore
+                }
+
+                break;
+            }
+            Some(row) => {
+                let new_stop_id = row.get::<_, String>("id")?;
+                //let transfer_target_id =//TODO
+                //let transfer_time=//TODO
+
+                current_stop_id = match current_stop_id {
+                    None => Some(new_stop_id),
+                    Some(old_stop_id) if old_stop_id != new_stop_id => {
+                        // Complete stop
+                        let stop = PartialStop {
+                            id: old_stop_id.clone(),
+                            transfers_count,
+                            transfers_index_start,
+                        };
+
+                        stops.push(stop);
+                        index_by_stop_id.insert(old_stop_id, stop_index);
+                        stop_index += 1;
+
+                        // Advance start pointers
+                        //TODO support transfers
+                        transfers_index_start += transfers_count;
+
+                        // Reset counters
+                        transfers_count = 0;
+
+                        Some(new_stop_id)
+                    }
+                    id => id,
                 };
 
-                stops.push(stop);
-                index_by_stop_id.insert(old_stop_id, stop_index);
-                stop_index += 1;
-
-                // Advance start pointers
-                //TODO support transfers
-                transfers_index_start += transfers_count;
-
-                // Reset counters
-                transfers_count = 0;
-
-                Some(new_stop_id)
+                // We complete transfers when we have all target stop indices. At this point we only have
+                // transfer source stop index
+                // partial_transfers.push((transfer_target_id, transfer_time));//TODO
+                // transfers_count += 1; //TODO use
             }
-            id => id,
-        };
-
-        // We complete transfers when we have all target stop indices. At this point we only have
-        // transfer source stop index
-        // partial_transfers.push((transfer_target_id, transfer_time));//TODO
-        // transfers_count += 1; //TODO use
+        }
     }
 
     let mut transfers = Vec::with_capacity(partial_transfers.len());
@@ -175,59 +195,80 @@ pub(crate) fn get_routes(
     let mut trips_count: usize = 0;
     let mut stop_times_count: usize = 0;
     let mut route_stops_count: usize = 0;
-    while let Some(row) = rows.next()? {
-        let next_trip_id: String = row.get("trip_id")?;
-        let stop_id: String = row.get("stop_id")?;
-        // Assume we have all stops that can be referenced or this would reference a non-existent
-        // stop which is undefined behavior but would at least make this route unusable for end users
-        let stop_index = index_by_stop_id.get(&stop_id).unwrap();
-        let stop_time = StopTime {
-            arrival_time: row.get::<_, u64>("departure_time_seconds")?.into(),
-            departure_time: row.get::<_, u64>("arrival_time_seconds")?.into(),
-        };
+    loop {
+        match rows.next()? {
+            None => {
+                // Is last row?
+                if let Some(last_trip) = current_trip {
+                    // Complete last trip
+                    trips_count += 1;
+                    let stop_sequence = mem::take(&mut current_stop_sequence);
+                    route_stops_count += stop_sequence.len();
 
-        current_trip = match current_trip {
-            None => Some(Trip {
-                id: next_trip_id,
-                stop_times: Vec::from([stop_time]),
-            }),
-            Some(completed_trip) if completed_trip.id != next_trip_id => {
-                // Complete current trip
-                trips_count += 1;
-                let stop_sequence = mem::take(&mut current_stop_sequence);
-                route_stops_count += stop_sequence.len();
+                    // Add trip to routes but insert it ordered by departure (impl Ord for Trip takes care of that)
+                    let mut trips = trips_by_stops.entry(stop_sequence).or_default();
 
-                // Add trip to routes but insert it ordered by departure (impl Ord for Trip takes care of that)
-                let mut trips = trips_by_stops.entry(stop_sequence).or_default();
+                    let position = trips.binary_search(&last_trip).unwrap_or_else(identity);
+                    trips.insert(position, last_trip);
+                }
 
-                // Trips that depart at the same time and have the same sequence of stops can be a
-                // valid option for the user to choose from as the user might consider factors
-                // unknown to us. Although this is very unlikely it is not impossible.
-                // There could also be trips with the same departure time and sequence of stops
-                // where one trip might arrive earlier because the train or bus is faster. (This too
-                // seems unrealistic but is theoretically not impossible)
-                // So get the position where it already exists or gets the position where it should
-                // be inserted
-                let position = trips
-                    .binary_search(&completed_trip)
-                    .unwrap_or_else(identity);
-                trips.insert(position, completed_trip);
-
-                // Continue with new trip moving forward
-                Some(Trip {
-                    id: next_trip_id,
-                    stop_times: Vec::from([stop_time]),
-                })
+                break;
             }
-            // Here we are still on the same trip
-            Some(mut trip) => {
-                trip.stop_times.push(stop_time);
-                Some(trip)
-            }
-        };
+            Some(row) => {
+                let next_trip_id: String = row.get("trip_id")?;
+                let stop_id: String = row.get("stop_id")?;
+                // Assume we have all stops that can be referenced or this would reference a non-existent
+                // stop which is undefined behavior but would at least make this route unusable for end users
+                let stop_index = index_by_stop_id.get(&stop_id).unwrap();
+                let stop_time = StopTime {
+                    arrival_time: row.get::<_, u64>("departure_time_seconds")?.into(),
+                    departure_time: row.get::<_, u64>("arrival_time_seconds")?.into(),
+                };
 
-        stop_times_count += 1;
-        current_stop_sequence.push(*stop_index);
+                current_trip = match current_trip {
+                    None => Some(Trip {
+                        id: next_trip_id,
+                        stop_times: Vec::from([stop_time]),
+                    }),
+                    Some(completed_trip) if completed_trip.id != next_trip_id => {
+                        // Complete current trip
+                        trips_count += 1;
+                        let stop_sequence = mem::take(&mut current_stop_sequence);
+                        route_stops_count += stop_sequence.len();
+
+                        // Add trip to routes but insert it ordered by departure (impl Ord for Trip takes care of that)
+                        let mut trips = trips_by_stops.entry(stop_sequence).or_default();
+
+                        // Trips that depart at the same time and have the same sequence of stops can be a
+                        // valid option for the user to choose from as the user might consider factors
+                        // unknown to us. Although this is very unlikely it is not impossible.
+                        // There could also be trips with the same departure time and sequence of stops
+                        // where one trip might arrive earlier because the train or bus is faster. (This too
+                        // seems unrealistic but is theoretically not impossible)
+                        // So get the position where it already exists or gets the position where it should
+                        // be inserted
+                        let position = trips
+                            .binary_search(&completed_trip)
+                            .unwrap_or_else(identity);
+                        trips.insert(position, completed_trip);
+
+                        // Continue with new trip moving forward
+                        Some(Trip {
+                            id: next_trip_id,
+                            stop_times: Vec::from([stop_time]),
+                        })
+                    }
+                    // Here we are still on the same trip
+                    Some(mut trip) => {
+                        trip.stop_times.push(stop_time);
+                        Some(trip)
+                    }
+                };
+
+                stop_times_count += 1;
+                current_stop_sequence.push(*stop_index);
+            }
+        }
     }
 
     Ok(GetRoutesReturn {
