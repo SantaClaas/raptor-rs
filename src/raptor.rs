@@ -135,7 +135,8 @@ pub(crate) struct RoutesData {
 impl RoutesData {
     fn get_stop_times(&self, route: &Route) -> &[StopTime] {
         let start = route.stop_times_start_index;
-        let end = start + (route.number_of_trips * route.number_of_stops);
+        let length = route.number_of_trips * route.number_of_stops;
+        let end = start + length;
         &self.stop_times[start..end]
     }
 
@@ -249,7 +250,7 @@ pub fn raptor(
     source: usize,
     target: usize,
     departure: &Time,
-    routes: RoutesData,
+    route_data: RoutesData,
     stops: StopsData,
 ) -> Vec<HashMap<usize, Connection>> {
     let mut k = 0usize;
@@ -284,9 +285,9 @@ pub fn raptor(
 
             for route in routes_serving_p {
                 if let Some(p_other) = queue.get(route) {
-                    let route_value = &routes.routes[*route];
-                    let sequence = &routes.get_stop_sequence(route_value, p).unwrap();
-                    let sequence_other = &routes.get_stop_sequence(route_value, p_other).unwrap();
+                    let route_value = &route_data.routes[*route];
+                    let sequence = &route_data.get_stop_sequence(route_value, p).unwrap();
+                    let sequence_other = &route_data.get_stop_sequence(route_value, p_other).unwrap();
 
                     // If p comes before p' (p_other) replace p' with p
                     if sequence < sequence_other {
@@ -303,15 +304,15 @@ pub fn raptor(
 
         for (route_index, p) in &queue {
             // Go through each stop of route starting with p
-            let route = &routes.routes[**route_index];
-            let stops = routes.get_route_stops(route);
+            let route = &route_data.routes[**route_index];
+            let route_stops = route_data.get_route_stops(route);
             let mut current_trip: Option<(usize, &[StopTime], &usize)> = None;
 
             // Traverse stops in route starting with marked stop
-            let start_sequence = stops.iter().position(|stop| &stop == p).unwrap();
-            for stop_sequence in start_sequence..stops.len() {
+            let start_sequence = route_stops.iter().position(|stop| &stop == p).unwrap();
+            for stop_sequence in start_sequence..route_stops.len() {
                 // Stop (index) of the stop in the trip we traverse
-                let trip_stop = &stops[stop_sequence];
+                let trip_stop = &route_stops[stop_sequence];
 
                 if let Some((trip_number, trip_times, boarded_at_stop)) = current_trip {
                     // Earliest known arrival at stop for any route and trip (for local pruning?)
@@ -352,7 +353,7 @@ pub fn raptor(
                     .unwrap_or(&Infinite);
 
                 if previous_arrival <= arrival_time {
-                    current_trip = routes
+                    current_trip = route_data
                         .get_earliest_departing_trip(route, &stop_sequence, previous_arrival)
                         .map(|(trip_number, trip_times)| (trip_number, trip_times, trip_stop));
                 }

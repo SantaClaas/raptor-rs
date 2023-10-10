@@ -1,14 +1,12 @@
 use crate::raptor;
 use crate::raptor::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
-use rusqlite::Error;
-use rusqlite::{params, Connection};
+use rusqlite::{named_params, Error};
+use rusqlite::Connection;
 use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::identity;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::mem;
-use std::time::Duration;
 
 #[deprecated]
 pub fn assemble_stops_data(
@@ -260,17 +258,17 @@ fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
 
         current_stop_id = match current_stop_id {
             None => Some(new_stop_id),
-            Some(stop_id) if stop_id != new_stop_id => {
+            Some(old_stop_id) if old_stop_id != new_stop_id => {
                 // Complete stop
                 let stop = PartialStop {
-                    id: stop_id.clone(),
+                    id: old_stop_id.clone(),
                     transfers_count,
                     transfers_index_start,
                 };
 
                 stops.push(stop);
+                index_by_stop_id.insert(old_stop_id, stop_index);
                 stop_index += 1;
-                index_by_stop_id.insert(stop_id, stop_index);
 
                 // Advance start pointers
                 //TODO support transfers
@@ -575,15 +573,16 @@ fn how_fast() {
 
     let dream_source_stop_id = "1808";
     let dream_target_stop_id = "1811";
-    let source_index = index_by_stop_id.get(dream_source_stop_id).unwrap();
-    let target_index = index_by_stop_id.get(dream_target_stop_id).unwrap();
+    let source_index = *index_by_stop_id.get(dream_source_stop_id).unwrap();
+    let target_index = *index_by_stop_id.get(dream_target_stop_id).unwrap() ;
     let departure = Time::from(12 * 60 * 60);
 
+
     //TODO remove clown copy
-    let stops = stops_data.stops. clone();
+    let stops = stops_data.stops.clone();
     let results = raptor(
-        *source_index,
-        *target_index,
+        source_index,
+        target_index,
         &departure,
         routes_data,
         stops_data,
@@ -593,14 +592,40 @@ fn how_fast() {
         .prepare("SELECT name FROM stops WHERE id = :id")
         .unwrap();
 
+    let mut get_stop_name = |stop_index: usize| -> String {
+        let stop_id = &stops[stop_index].id;
+        statement
+            .query_row(named_params! {":id": stop_id}, |row| {
+                row.get::<_, String>("name")
+            })
+            .unwrap()
+    };
+
+    let from = get_stop_name(source_index);
+    let to = get_stop_name(target_index);
+    println!("From {from} to {to}");
+
     let mut round = 1;
     for result in results {
         println!("Round {round} visited...");
-        for (stop_index, _) in result {
-            let stop_id = &stops[stop_index].id;
-            let stop_name = statement.query_row(params![":id", stop_id], |row| row.get::<_, String>("name")).unwrap();
+        for (stop_index, connection) in result {
+            let stop_name = get_stop_name(stop_index);
 
-            print!("{stop_name} ")
+            print!("\t{stop_name}:\t");
+            match connection {
+                raptor::Connection::Connection {
+                    route,
+                    trip_number,
+                    boarded_at_stop,
+                    exited_at_stop,
+
+                } => {
+                    let boarded = get_stop_name(boarded_at_stop);
+                    let exited = get_stop_name(exited_at_stop);
+                    println!("Route {route} Trip {trip_number} Connection {boarded} -> {exited}");
+                }
+                raptor::Connection::FootPath { .. } => {}
+            }
         }
         println!();
 
