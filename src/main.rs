@@ -8,5 +8,4 @@ fn main() {
 
     let connection = Connection::open("database.db").unwrap();
 
-    data::get_data(&connection).expect("oh no");
 }
