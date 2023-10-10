@@ -25,7 +25,7 @@ fn main() {
 
 
     let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
-    
+
     let dream_source_stop_id = "1808";
     let dream_target_stop_id = "1811";
     let source_index = *index_by_stop_id.get(dream_source_stop_id).unwrap();
