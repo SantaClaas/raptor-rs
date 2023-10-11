@@ -289,7 +289,8 @@ pub fn raptor(
                 if let Some(p_other) = queue.get(route) {
                     let route_value = &route_data.routes[*route];
                     let sequence = &route_data.get_stop_sequence(route_value, p).unwrap();
-                    let sequence_other = &route_data.get_stop_sequence(route_value, p_other).unwrap();
+                    let sequence_other =
+                        &route_data.get_stop_sequence(route_value, p_other).unwrap();
 
                     // If p comes before p' (p_other) replace p' with p
                     if sequence < sequence_other {

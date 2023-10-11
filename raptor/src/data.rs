@@ -61,6 +61,7 @@ pub struct GetStopsReturn {
     /// The index of the stop representing the stop id in the stops vector
     pub index_by_stop_id: HashMap<String, usize>,
 }
+
 pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
