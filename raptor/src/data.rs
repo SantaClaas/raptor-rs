@@ -1,10 +1,10 @@
-use crate::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
+use crate::{Route, RoutesData, Stop, StopTime, StopsData, Transfer};
 use rusqlite::Connection;
-use rusqlite::{named_params, Error, Row};
+use rusqlite::{Error};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::identity;
-use std::hash::Hash;
+
 use std::mem;
 
 struct Trip {
@@ -69,7 +69,7 @@ pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     let mut rows = statement.query([])?;
 
     // As we don't know the stop index of every target stop yet, we need to complete transfers later
-    let mut partial_transfers: Vec<(&String, u64)> = Vec::new();
+    let partial_transfers: Vec<(&String, u64)> = Vec::new();
     let mut stops = Vec::new();
     let mut stop_index = 0;
     let mut current_stop_id: Option<String> = None;
@@ -207,7 +207,7 @@ pub fn get_routes(
                     route_stops_count += stop_sequence.len();
 
                     // Add trip to routes but insert it ordered by departure (impl Ord for Trip takes care of that)
-                    let mut trips = trips_by_stops.entry(stop_sequence).or_default();
+                    let trips = trips_by_stops.entry(stop_sequence).or_default();
 
                     let position = trips.binary_search(&last_trip).unwrap_or_else(identity);
                     trips.insert(position, last_trip);
@@ -238,7 +238,7 @@ pub fn get_routes(
                         route_stops_count += stop_sequence.len();
 
                         // Add trip to routes but insert it ordered by departure (impl Ord for Trip takes care of that)
-                        let mut trips = trips_by_stops.entry(stop_sequence).or_default();
+                        let trips = trips_by_stops.entry(stop_sequence).or_default();
 
                         // Trips that depart at the same time and have the same sequence of stops can be a
                         // valid option for the user to choose from as the user might consider factors
@@ -329,7 +329,7 @@ pub fn assemble_raptor_data(
     let mut stop_routes_count = 0;
 
     // Go through each route
-    for (mut stop_indices, mut trips_ordered) in trips_by_stops.into_iter() {
+    for (mut stop_indices, trips_ordered) in trips_by_stops.into_iter() {
         let number_of_stops = stop_indices.len();
 
         let length = stop_indices.len();
@@ -395,7 +395,7 @@ pub fn assemble_raptor_data(
     {
         // There indeed exist stops where no one stops in GTFS
         // Maybe they are stations that group stops but the ones I have encountered so far aren't
-        let mut route_indices = route_indices_by_stop_index.remove(&stop_index);
+        let route_indices = route_indices_by_stop_index.remove(&stop_index);
 
         let stop_routes_count = match route_indices {
             Some(mut route_indices) => {

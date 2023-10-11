@@ -269,7 +269,7 @@ pub fn raptor(
 
     while !marked_stops.is_empty() {
         k += 1;
-        let last_round_labels = &labels_by_round[(k - 1)];
+        let last_round_labels = &labels_by_round[k - 1];
         let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
         // Best connection for current round by the stop the connection reaches
         // For journey reconstruction

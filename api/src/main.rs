@@ -1,10 +1,10 @@
 extern crate core;
 
 use raptor::data::{
-    assemble_raptor_data, get_routes, get_stops, GetRoutesReturn, GetStopsReturn, PartialStop,
+    assemble_raptor_data, get_routes, get_stops, GetStopsReturn,
 };
-use raptor::{raptor, RoutesData, Stop, StopsData, Time, Transfer};
-use rusqlite::{named_params, Connection, Result, Statement};
+use raptor::{raptor, Time};
+use rusqlite::{named_params, Connection};
 
 fn main() {
     let connection = Connection::open("database.db").unwrap();
@@ -22,7 +22,8 @@ fn main() {
     )
     .unwrap();
 
-    let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
+    //TODO check if trip ids is needed
+    let (routes_data, stops_data, _trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);
 
     let dream_source_stop_id = "1808";
     let dream_target_stop_id = "1811";
