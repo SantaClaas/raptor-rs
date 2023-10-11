@@ -1,4 +1,6 @@
-use crate::raptor::Time::{Finite, Infinite};
+pub mod data;
+
+use crate::Time::{Finite, Infinite};
 use std::cmp::{min, Ordering};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
@@ -9,7 +11,7 @@ use std::ops::Add;
 /// The value represents a time after midnight for a day. It can be greater than 24h if a stop on a
 /// trip is reached the next day after midnight
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum Time {
+pub enum Time {
     Finite(u64),
     Infinite,
 }
@@ -120,7 +122,7 @@ pub(crate) struct Route {
     pub(crate) stop_times_start_index: usize,
 }
 
-pub(crate) struct RoutesData {
+pub struct RoutesData {
     /// This array is divided into blocks, and the i-th block contains all trips corresponding
     /// to route ri. Within a block, trips are sorted by departure time (at the first stop).
     /// Each trip is just a sequence of stop times, represented by the corresponding arrival
@@ -183,8 +185,8 @@ impl RoutesData {
 }
 
 #[derive(Clone)]
-pub(crate) struct Stop {
-    pub(crate) id: String,
+pub struct Stop {
+    pub id: String,
     pub(crate) transfers_index_start: usize,
     pub(crate) stop_routes_index_start: usize,
     pub(crate) transfers_count: usize,
@@ -206,16 +208,16 @@ impl PartialEq<Self> for Stop {
 impl Eq for Stop {}
 
 /// A transfer that leaves a stop and allows reaching another stop by foot path
-pub(crate) struct Transfer {
+pub struct Transfer {
     /// The target stop that can be reached by foot through this foot-path
     pub(crate) target: usize,
     /// Time it takes to reach the target stop by foot
     pub(crate) time: Time,
 }
 
-pub(crate) struct StopsData {
+pub struct StopsData {
     pub(crate) transfers: Vec<Transfer>,
-    pub(crate) stops: Vec<Stop>,
+    pub stops: Vec<Stop>,
     /// Not the routes themselves but the indices of in the route data
     pub(crate) stop_routes: Vec<usize>,
 }
@@ -234,7 +236,7 @@ impl StopsData {
 }
 
 /// A connection between two stops
-pub(crate) enum Connection {
+pub enum Connection {
     /// By using a trip with on a route with the respective transportation
     Connection {
         route: usize,

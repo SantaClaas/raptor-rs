@@ -1,10 +1,7 @@
 extern crate core;
 
-mod data;
-mod raptor;
-
-use crate::data::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn};
-use crate::raptor::{raptor, Time};
+use raptor::data::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn, PartialStop, GetRoutesReturn};
+use raptor::{raptor, Time, Stop, StopsData, RoutesData, Transfer};
 use rusqlite::{named_params, Connection, Result, Statement};
 
 fn main() {
@@ -21,7 +18,7 @@ fn main() {
         //TODO remove debug clone clown
         index_by_stop_id.clone(),
     )
-    .unwrap();
+        .unwrap();
 
 
     let (routes_data, stops_data, trip_ids) = assemble_raptor_data(step_2_result, stops, transfers);

@@ -1,4 +1,4 @@
-use crate::raptor::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
+use crate::{raptor, Route, RoutesData, Stop, StopTime, StopsData, Time, Transfer};
 use rusqlite::Connection;
 use rusqlite::{named_params, Error, Row};
 use std::cmp::Ordering;
@@ -48,20 +48,20 @@ impl Ord for Trip {
     }
 }
 
-pub(crate) struct PartialStop {
+pub struct PartialStop {
     id: String,
     transfers_count: usize,
     transfers_index_start: usize,
 }
 
 /// A quick type to bundle the return from loading tops
-pub(crate) struct GetStopsReturn {
-    pub(crate) transfers: Vec<Transfer>,
-    pub(crate) stops: Vec<PartialStop>,
+pub struct GetStopsReturn {
+    pub transfers: Vec<Transfer>,
+    pub stops: Vec<PartialStop>,
     /// The index of the stop representing the stop id in the stops vector
-    pub(crate) index_by_stop_id: HashMap<String, usize>,
+    pub index_by_stop_id: HashMap<String, usize>,
 }
-pub(crate) fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
+pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     //TODO transfers
     let mut statement = connection.prepare("SELECT id FROM stops;")?;
 
@@ -157,14 +157,14 @@ pub(crate) fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error
 }
 
 /// Just a quick struct to bundle return values from get_routes
-pub(crate) struct GetRoutesReturn {
+pub struct GetRoutesReturn {
     trips_by_stops: HashMap<Vec<usize>, Vec<Trip>>,
     trips_count: usize,
     stop_times_count: usize,
     route_stops_count: usize,
 }
 
-pub(crate) fn get_routes(
+pub fn get_routes(
     connection: &Connection,
     index_by_stop_id: HashMap<String, usize>,
 ) -> Result<GetRoutesReturn, Error> {
@@ -295,7 +295,7 @@ pub(crate) fn get_routes(
 /// ```
 ///
 /// ```
-pub(crate) fn assemble_raptor_data(
+pub fn assemble_raptor_data(
     GetRoutesReturn {
         trips_by_stops,
         trips_count,

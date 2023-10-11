@@ -1,4 +1,9 @@
 /target
 
-# Ignore generated SQLite database files
+.idea/
+
+# Generated database files
 *.db
+
+# MacOS things
+.DS_Store
