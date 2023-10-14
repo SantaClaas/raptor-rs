@@ -1,7 +1,8 @@
 mod sql;
 
-use crate::sql::Route;
+use crate::sql::{Insert, Route, Stop};
 use csv::{Reader, StringRecord};
+use serde::Deserialize;
 use sql::Agency;
 use std::env;
 use std::fmt::Debug;
@@ -9,6 +10,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
+use zip::read::ZipFile;
 use zip::ZipArchive;
 
 const REQUIRED_FILES: [&'static str; 5] = [
@@ -56,6 +58,57 @@ impl<T> MapInto<T> for Option<T> {
     }
 }
 
+#[derive(Debug)]
+enum Error {
+    Csv(csv::Error),
+    Sql(rusqlite::Error),
+}
+
+impl From<csv::Error> for Error {
+    fn from(value: csv::Error) -> Self {
+        Error::Csv(value)
+    }
+}
+
+impl From<rusqlite::Error> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        Error::Sql(value)
+    }
+}
+
+
+/// This function allows inserting entries read from a CSV into an insertee like an SQLite
+/// database. To be able to insert the entries the struct that should be inserted needs to be
+/// deserializable and the insertee needs to be able to insert that struct (the Insert<T> trait
+/// needs to be implemented for the struct T)
+///
+/// # Arguments
+///
+/// * `reader`:
+/// * `inserter`:
+///
+/// returns: Result<(), Error>
+///
+/// # Examples
+///
+/// ```
+///
+/// ```
+fn insert_csv<T: for<'a> Deserialize<'a>, TInsert: Insert<T>>(
+    reader: &mut Reader<ZipFile>,
+    insertee: &TInsert,
+) -> Result<(), Error> {
+    let mut count = 0usize;
+    for result in reader.deserialize() {
+        let item: T = result?;
+        insertee.insert(item)?;
+        count += 1;
+        println!("Completed {count}")
+    }
+
+    Ok(())
+}
+
 fn main() {
     let connection = sql::create_database().unwrap();
 
@@ -92,69 +145,10 @@ fn main() {
         };
 
         match file_name {
-            "agency.txt" => {
-                let mut count = 0usize;
-                for result in reader.records() {
-                    let record = result.expect("Could not read record from agencies");
-                    let get_required = |name| {
-                        get_by_name(&record, name)
-                            .expect(&*format!("Expected agency to have field {}", name))
-                    };
-                    let get = |name| get_by_name(&record, name);
-
-                    let agency = Agency {
-                        id: get_required("agency_id"),
-                        name: get_required("agency_name"),
-                        url: get_required("agency_url"),
-                        timezone: get_required("agency_timezone"),
-                        language: get("agency_lang"),
-                        phone: get("agency_phone"),
-                        fare_url: get("agency_fare_url"),
-                        email: get("agency_email"),
-                    };
-
-                    sql::insert_agency(&connection, agency).unwrap();
-
-                    count += 1;
-                    println!("Completed {count}");
-                }
-            }
-            "routes.txt" => {
-                let mut count = 0usize;
-                for result in reader.records() {
-                    let record = result.expect("Could not read record from agencies");
-                    let get_required = |name| {
-                        get_by_name(&record, name)
-                            .expect(&*format!("Expected agency to have field {}", name))
-                    };
-                    let get = |name| get_by_name(&record, name);
-
-                    let route = Route {
-                        id: get_required("route_id"),
-                        agency_id: get("agency_id"),
-                        short_name: get("route_short_name"),
-                        long_name: get("route_long_name"),
-                        description: get("route_desc"),
-                        route_type: get_required("route_type").parse().unwrap(),
-                        url: get("route_url"),
-                        color: get("route_color"),
-                        text_color: get("route_text_color"),
-                        sort_order: get("route_sort_order")
-                            .map(|order| u32::from_str(order.as_str()).unwrap()),
-                        continuous_pickup: get("continuous_pickup")
-                            .map(|order| u8::from_str(order.as_str()).unwrap()),
-                        continuous_drop_off: get("continuous_drop_off")
-                            .map(|order| u8::from_str(order.as_str()).unwrap()),
-                        network_id: get("network_id"),
-                    };
-
-                    sql::insert_route(&connection, route).unwrap();
-
-                    count += 1;
-                    println!("Completed {count}");
-                }
-            }
-            _ => todo!(),
+            "agency.txt" => insert_csv::<Agency, _>(&mut reader, &connection).unwrap(),
+            "stops.txt" => insert_csv::<Stop, _>(&mut reader, &connection).unwrap(),
+            "routes.txt" =>  insert_csv::<Route, _>(&mut reader, &connection).unwrap(),
+            file => todo!("Support for file \"{file}\" is not yet implemented"),
         }
     }
 }

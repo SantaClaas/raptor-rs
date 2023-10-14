@@ -9,3 +9,4 @@ edition = "2021"
 csv = "1.3.0"
 rusqlite = "0.29.0"
 zip = "0.6.6"
+serde = { version = "1.0.189", features = ["derive"] }
