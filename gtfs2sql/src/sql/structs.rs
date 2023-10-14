@@ -108,3 +108,37 @@ pub(crate) struct StopTime {
     pub(crate) shape_distance_travelled: Option<f32>,
     pub(crate) timepoint: Option<u8>,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Calendar {
+    #[serde(rename = "service_id")]
+    pub(crate) id: String,
+    pub(crate) monday: bool,
+    pub(crate) tuesday: bool,
+    pub(crate) wednesday: bool,
+    pub(crate) thursday: bool,
+    pub(crate) friday: bool,
+    pub(crate) saturday: bool,
+    pub(crate) sunday: bool,
+    pub(crate) start_date: String,
+    pub(crate) end_date: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CalendarDate {
+    pub(crate) service_id: String,
+    pub(crate) date: String,
+    pub(crate) exception_type: u8,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareAttribute {
+    pub(crate) fare_id: String,
+    pub(crate) price: f32,
+    pub(crate) currency_type: String,
+    pub(crate) payment_method: u8,
+    //TODO use enum values
+    pub(crate) transfers: Option<u8>,
+    pub(crate) agency_id: Option<String>,
+    pub(crate) transfer_duration: Option<usize>,
+}
