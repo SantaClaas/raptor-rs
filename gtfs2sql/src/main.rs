@@ -109,6 +109,8 @@ fn insert_csv<T: for<'a> Deserialize<'a>, TInsert: Insert<T>>(
 }
 
 fn main() {
+
+    let r = sql::create_database();
     let connection = sql::create_database().unwrap();
 
     let file_path = env::args()
@@ -133,7 +135,20 @@ fn main() {
             "routes.txt" => insert_csv::<Route, _>(&mut reader, &connection).unwrap(),
             "trips.txt" => insert_csv::<Trip, _>(&mut reader, &connection).unwrap(),
             "stop_times.txt" => insert_csv::<StopTime, _>(&mut reader, &connection).unwrap(),
-            file => todo!("Support for file \"{file}\""),
+            _ => (),
+        }
+    }
+
+    for file_name in CONDITIONALLY_REQUIRED_FILES {
+        println!("Reading {file_name}");
+        let file = archive
+            .by_name(file_name)
+            .expect("Required file is missing");
+        let mut reader = Reader::from_reader(file);
+        match file_name {
+            "calendar.txt" => todo!(),
+            "calendar_dates.txt" => todo!(),
+            _ => (),
         }
     }
 }
