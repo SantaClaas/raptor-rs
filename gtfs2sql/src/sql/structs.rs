@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use crate::sql::time::Time;
+use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Agency {
@@ -33,9 +34,9 @@ pub(crate) struct Stop {
     #[serde(rename = "stop_desc")]
     pub(crate) description: Option<String>,
     #[serde(rename = "stop_lat")]
-    pub(crate) latitude: Option<String>,
+    pub(crate) latitude: Option<f32>,
     #[serde(rename = "stop_long")]
-    pub(crate) longitude: Option<String>,
+    pub(crate) longitude: Option<f32>,
     pub(crate) zone_id: Option<String>,
     #[serde(rename = "stop_url")]
     pub(crate) url: Option<String>,
@@ -74,14 +75,28 @@ pub(crate) struct Route {
     pub(crate) network_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct Trip {
+    pub(crate) route_id: String,
+    pub(crate) service_id: String,
+    #[serde(rename = "trip_id")]
+    pub(crate) id: String,
+    #[serde(rename = "trip_headsign")]
+    pub(crate) headsign: Option<String>,
+    #[serde(rename = "trip_short_name")]
+    pub(crate) short_name: Option<String>,
+    pub(crate) direction_id: Option<u8>,
+    pub(crate) block_id: Option<String>,
+    pub(crate) shape_id: Option<String>,
+    pub(crate) wheelchair_accessible: Option<u8>,
+    pub(crate) bikes_allowed: Option<u8>,
+}
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StopTime {
     pub(crate) trip_id: String,
-    pub(crate) arrival_time: Option<String>,
-    pub(crate) arrival_time_seconds: Option<u64>,
-    pub(crate) departure_time: Option<String>,
-    pub(crate) departure_time_seconds: Option<u64>,
+    pub(crate) arrival_time: Option<Time>,
+    pub(crate) departure_time: Option<Time>,
     pub(crate) stop_id: String,
     pub(crate) stop_sequence: u32,
     pub(crate) stop_headsign: Option<String>,
@@ -89,20 +104,7 @@ pub(crate) struct StopTime {
     pub(crate) drop_off_type: Option<u8>,
     pub(crate) continuous_pickup: Option<u8>,
     pub(crate) continuous_drop_off: Option<u8>,
+    #[serde(rename = "shape_dist_travelled")]
     pub(crate) shape_distance_travelled: Option<f32>,
     pub(crate) timepoint: Option<u8>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct Trip {
-    pub(crate) route_id: String,
-    pub(crate) service_id: String,
-    pub(crate) id: String,
-    pub(crate) headsign: Option<String>,
-    pub(crate) short_name: Option<String>,
-    pub(crate) direction_id: Option<u8>,
-    pub(crate) block_id: Option<String>,
-    pub(crate) shape_id: Option<String>,
-    pub(crate) wheelchair_accessible: Option<u8>,
-    pub(crate) bikes_allowed: Option<u8>,
 }

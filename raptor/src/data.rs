@@ -1,6 +1,6 @@
 use crate::{Route, RoutesData, Stop, StopTime, StopsData, Transfer};
 use rusqlite::Connection;
-use rusqlite::{Error};
+use rusqlite::Error;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::identity;

@@ -2,10 +2,14 @@ mod create_database_query;
 mod queries;
 mod structs;
 
+mod time;
+
 use crate::sql::create_database_query::CREATE_DATABASE_QUERY;
 use crate::sql::queries::*;
 pub(crate) use crate::sql::structs::{Agency, Route, Stop, StopTime, Trip};
-use rusqlite::{named_params, Connection};
+pub(crate) use crate::sql::time::Time;
+use rusqlite::types::ToSqlOutput;
+use rusqlite::{named_params, Connection, ToSql};
 
 pub(crate) fn create_database() -> Result<Connection, rusqlite::Error> {
     let connection = Connection::open("database.db")?;
@@ -95,6 +99,11 @@ impl Insert<Stop> for Connection {
     }
 }
 
+impl ToSql for Time {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(self.to_string().into())
+    }
+}
 impl Insert<StopTime> for Connection {
     fn insert(&self, stop_time: StopTime) -> rusqlite::Result<()> {
         let mut statement = self.prepare_cached(INSERT_STOP_TIME_QUERY)?;
@@ -102,9 +111,9 @@ impl Insert<StopTime> for Connection {
         statement.execute(named_params! {
             ":trip_id": stop_time.trip_id,
             ":arrival_time": stop_time.arrival_time,
-            ":arrival_time_seconds": stop_time.arrival_time_seconds,
+            ":arrival_time_seconds": stop_time.arrival_time.map(Time::total_seconds),
             ":departure_time": stop_time.departure_time,
-            ":departure_time_seconds": stop_time.departure_time_seconds,
+            ":departure_time_seconds": stop_time.departure_time.map(Time::total_seconds),
             ":stop_id": stop_time.stop_id,
             ":stop_sequence": stop_time.stop_sequence,
             ":stop_headsign": stop_time.stop_headsign,

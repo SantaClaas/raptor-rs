@@ -1,7 +1,7 @@
 mod sql;
 
-use crate::sql::{Insert, Route, Stop};
-use csv::{Reader, StringRecord};
+use crate::sql::{Insert, Route, Stop, StopTime, Trip};
+use csv::Reader;
 use serde::Deserialize;
 use sql::Agency;
 use std::env;
@@ -76,7 +76,6 @@ impl From<rusqlite::Error> for Error {
     }
 }
 
-
 /// This function allows inserting entries read from a CSV into an insertee like an SQLite
 /// database. To be able to insert the entries the struct that should be inserted needs to be
 /// deserializable and the insertee needs to be able to insert that struct (the Insert<T> trait
@@ -128,27 +127,13 @@ fn main() {
             .expect("Required file is missing");
         let mut reader = Reader::from_reader(file);
 
-        let headers = reader
-            .headers()
-            .expect("Expected file to have headers. Can not read file without headers.")
-            .clone();
-
-        let headers = Vec::from_iter(&headers);
-
-        let get_by_name = |record: &StringRecord, header_name: &str| -> Option<String> {
-            // Linear search is probably easier than binary as there aren't that many headers
-            headers
-                .iter()
-                .position(|header| *header == header_name)
-                .and_then(|position| record.get(position))
-                .map(ToString::to_string)
-        };
-
         match file_name {
             "agency.txt" => insert_csv::<Agency, _>(&mut reader, &connection).unwrap(),
             "stops.txt" => insert_csv::<Stop, _>(&mut reader, &connection).unwrap(),
-            "routes.txt" =>  insert_csv::<Route, _>(&mut reader, &connection).unwrap(),
-            file => todo!("Support for file \"{file}\" is not yet implemented"),
+            "routes.txt" => insert_csv::<Route, _>(&mut reader, &connection).unwrap(),
+            "trips.txt" => insert_csv::<Trip, _>(&mut reader, &connection).unwrap(),
+            "stop_times.txt" => insert_csv::<StopTime, _>(&mut reader, &connection).unwrap(),
+            file => todo!("Support for file \"{file}\""),
         }
     }
 }
