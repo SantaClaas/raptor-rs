@@ -10,3 +10,4 @@
 
 # Downloaded zip files like the ones containing GTFS data
 *.zip
+GTFS_VRS_mit_SPNV/

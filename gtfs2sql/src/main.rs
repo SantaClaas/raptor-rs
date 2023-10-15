@@ -7,9 +7,10 @@ use sql::Agency;
 use std::env;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::Read;
+use std::io::{stdout, Read, Write};
 use std::path::Path;
 use std::str::FromStr;
+use std::time::SystemTime;
 use zip::read::ZipFile;
 use zip::ZipArchive;
 
@@ -97,20 +98,24 @@ fn insert_csv<T: for<'a> Deserialize<'a>, TInsert: Insert<T>>(
     reader: &mut Reader<ZipFile>,
     insertee: &TInsert,
 ) -> Result<(), Error> {
-    let mut count = 0usize;
+    let mut count = 0f64;
+    let now = SystemTime::now();
+
     for result in reader.deserialize() {
         let item: T = result?;
         insertee.insert(item)?;
-        count += 1;
-        println!("Completed {count}")
+        count += 1.0;
+        let count_per_second = count / now.elapsed().unwrap().as_secs_f64();
+        print!("\rCompleted {count} {count_per_second:.2}\t entries/s");
+        stdout().flush().unwrap();
     }
+
+    println!();
 
     Ok(())
 }
 
 fn main() {
-
-    let r = sql::create_database();
     let connection = sql::create_database().unwrap();
 
     let file_path = env::args()

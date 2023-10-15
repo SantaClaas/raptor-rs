@@ -61,7 +61,8 @@ pub(crate) struct Route {
     pub(crate) long_name: Option<String>,
     #[serde(rename = "route_desc")]
     pub(crate) description: Option<String>,
-    pub(crate) route_type: u8,
+    #[serde(rename = "route_type")]
+    pub(crate) r#type: u8,
     #[serde(rename = "route_url")]
     pub(crate) url: Option<String>,
     #[serde(rename = "route_color")]
@@ -111,8 +112,7 @@ pub(crate) struct StopTime {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Calendar {
-    #[serde(rename = "service_id")]
-    pub(crate) id: String,
+    pub(crate) service_id: String,
     pub(crate) monday: bool,
     pub(crate) tuesday: bool,
     pub(crate) wednesday: bool,
@@ -141,4 +141,198 @@ pub(crate) struct FareAttribute {
     pub(crate) transfers: Option<u8>,
     pub(crate) agency_id: Option<String>,
     pub(crate) transfer_duration: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareRule {
+    pub(crate) fare_id: String,
+    pub(crate) route_id: Option<String>,
+    pub(crate) origin_id: Option<String>,
+    pub(crate) destination_id: Option<String>,
+    pub(crate) contains_id: Option<String>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Timeframe {
+    #[serde(rename = "timeframe_group_id")]
+    pub(crate) group_id: String,
+    pub(crate) start_time: Option<Time>,
+    pub(crate) end_time: Option<Time>,
+    pub(crate) service_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareMedia {
+    #[serde(rename = "fare_media_id")]
+    pub(crate) id: String,
+    #[serde(rename = "fare_media_name")]
+    pub(crate) name: Option<String>,
+    #[serde(rename = "fare_media_type")]
+    pub(crate) r#type: u8,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareProduct {
+    #[serde(rename = "fare_product_id")]
+    pub(crate) id: String,
+    #[serde(rename = "fare_product_name")]
+    pub(crate) name: Option<String>,
+    pub(crate) media_id: Option<String>,
+    pub(crate) amount: f64,
+    pub(crate) currency: String,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareLegRule {
+    #[serde(rename = "leg_group_id")]
+    pub(crate) group_id: Option<String>,
+    #[serde(rename = "fare_product_name")]
+    pub(crate) network_id: Option<String>,
+    pub(crate) from_area_id: Option<String>,
+    pub(crate) to_area_id: Option<String>,
+    pub(crate) from_timeframe_group_id: Option<String>,
+    pub(crate) to_timeframe_group_id: Option<String>,
+    pub(crate) fare_product_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FareTransferRule {
+    pub(crate) from_leg_group_id: Option<String>,
+    pub(crate) to_leg_group_id: Option<String>,
+    pub(crate) transfer_count: Option<usize>,
+    pub(crate) duration_limit: Option<usize>,
+    pub(crate) duration_limit_type: Option<u8>,
+    pub(crate) fare_transfer_type: u8,
+    pub(crate) fare_product_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Area {
+    #[serde(rename = "area_id")]
+    pub(crate) id: String,
+    #[serde(rename = "area_name")]
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StopArea {
+    pub(crate) area_id: String,
+    pub(crate) stop_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Shape {
+    #[serde(rename = "shape_id")]
+    pub(crate) id: String,
+    #[serde(rename = "shape_pt_lat")]
+    pub(crate) point_latitude: f32,
+    #[serde(rename = "shape_pt_lon")]
+    pub(crate) point_longitude: f32,
+    #[serde(rename = "shape_pt_sequence")]
+    pub(crate) point_sequence: usize,
+    #[serde(rename = "shape_dist_traveled")]
+    pub(crate) distance_traveled: Option<usize>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Frequency {
+    pub(crate) trip_id: String,
+    pub(crate) start_time: Time,
+    pub(crate) end_time: Time,
+    #[serde(rename = "headway_secs")]
+    pub(crate) headway_seconds: usize,
+    pub(crate) exact_times: Option<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Transfer {
+    pub(crate) from_stop_id: Option<String>,
+    pub(crate) to_stop_id: Option<String>,
+    pub(crate) from_route_id: Option<String>,
+    pub(crate) to_route_id: Option<String>,
+    pub(crate) from_trip_id: Option<String>,
+    pub(crate) to_trip_id: Option<String>,
+    #[serde(rename = "transfer_type")]
+    pub(crate) r#type: u8,
+    #[serde(rename = "min_transfer_time")]
+    pub(crate) minimum_transfer_time: Option<usize>,
+}
+#[derive(Debug, Deserialize)]
+pub(crate) struct Pathway {
+    #[serde(rename = "pathway_id")]
+    pub(crate) id: String,
+    pub(crate) from_stop_id: String,
+    pub(crate) to_stop_id: String,
+
+    #[serde(rename = "pathway_mode")]
+    pub(crate) mode: u8,
+    pub(crate) is_bidirectional: bool,
+    pub(crate) length: Option<usize>,
+    pub(crate) traversal_time: Option<usize>,
+    pub(crate) stair_count: Option<usize>,
+    #[serde(rename = "max_slope")]
+    pub(crate) maximum_slope: Option<f32>,
+    #[serde(rename = "min_width")]
+    pub(crate) minimum_width: Option<f32>,
+    pub(crate) signposted_as: Option<String>,
+    pub(crate) reversed_signposted_as: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Level {
+    #[serde(rename = "level_id")]
+    pub(crate) id: String,
+    #[serde(rename = "level_index")]
+    pub(crate) index: f32,
+    #[serde(rename = "level_name")]
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Translation {
+    pub(crate) table_name: String,
+    pub(crate) field_name: String,
+    pub(crate) language: String,
+    pub(crate) translation: String,
+    pub(crate) record_id: Option<String>,
+    pub(crate) record_sub_id: Option<String>,
+    pub(crate) field_value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FeedInfo {
+    #[serde(rename = "feed_publisher_name")]
+    pub(crate) publisher_name: String,
+    #[serde(rename = "feed_publisher_url")]
+    pub(crate) publisher_url: String,
+    #[serde(rename = "feed_lang")]
+    pub(crate) language: String,
+    #[serde(rename = "default_lang")]
+    pub(crate) default_language: String,
+    #[serde(rename = "feed_start_date")]
+    pub(crate) start_date: String,
+    #[serde(rename = "feed_end_date")]
+    pub(crate) end_date: String,
+    #[serde(rename = "feed_version")]
+    pub(crate) version: String,
+    #[serde(rename = "feed_contact_email")]
+    pub(crate) contact_email: String,
+    #[serde(rename = "feed_contact_url")]
+    pub(crate) contact_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Attribution {
+    #[serde(rename = "attribution_id")]
+    pub(crate) id: Option<String>,
+    pub(crate) agency_id: Option<String>,
+    pub(crate) route_id: Option<String>,
+    pub(crate) trip_id: Option<String>,
+    pub(crate) organization_name: String,
+    pub(crate) is_producer: Option<bool>,
+    pub(crate) is_operator: Option<bool>,
+    pub(crate) is_authority: Option<bool>,
+    #[serde(rename = "attribution_url")]
+    pub(crate) url: Option<String>,
+    #[serde(rename = "attribution_email")]
+    pub(crate) email: Option<String>,
+    #[serde(rename = "attribution_phone")]
+    pub(crate) phone: Option<String>,
 }
