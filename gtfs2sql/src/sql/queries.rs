@@ -258,3 +258,23 @@ pub(super) const INSERT_TRANSLATION_QUERY: &str =
          :record_id,
          :record_sub_id,
          :field_value);";
+
+pub(super) const INSERT_AREA_QUERY: &str =
+    /*language=sqlite*/
+    "INSERT OR IGNORE INTO areas VALUES (:id, :name);";
+
+pub(super) const INSERT_ATTRIBUTION_QUERY: &str =
+    /*language=sqlite*/
+    "INSERT OR IGNORE INTO attributions
+    VALUES (
+        :id,
+        :agency_id,
+        :route_id,
+        :trip_id,
+        :organization_name,
+        :is_producer,
+        :is_operator,
+        :is_authority,
+        :url,
+        :email,
+        :phone);";

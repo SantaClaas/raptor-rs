@@ -1,5 +1,5 @@
 use crate::sql::time::Time;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Agency {

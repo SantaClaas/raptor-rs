@@ -1,15 +1,14 @@
 mod sql;
 
-use crate::sql::{Insert, Route, Stop, StopTime, Trip};
 use csv::Reader;
 use serde::Deserialize;
-use sql::Agency;
+use sql::*;
 use std::env;
 use std::fmt::Debug;
 use std::fs::File;
-use std::io::{stdout, Read, Write};
+use std::io::{stdout, Write};
 use std::path::Path;
-use std::str::FromStr;
+
 use std::time::SystemTime;
 use zip::read::ZipFile;
 use zip::ZipArchive;
@@ -151,8 +150,42 @@ fn main() {
             .expect("Required file is missing");
         let mut reader = Reader::from_reader(file);
         match file_name {
-            "calendar.txt" => todo!(),
-            "calendar_dates.txt" => todo!(),
+            "calendar.txt" => insert_csv::<Calendar, _>(&mut reader, &connection).unwrap(),
+            "calendar_dates.txt" => {
+                insert_csv::<CalendarDate, _>(&mut reader, &connection).unwrap()
+            }
+            _ => (),
+        }
+    }
+
+    for file_name in OPTIONAL_FILES {
+        println!("Reading {file_name}");
+        let file = archive
+            .by_name(file_name)
+            .expect("Required file is missing");
+        let mut reader = Reader::from_reader(file);
+        match file_name {
+            "fare_attributes.txt" => {
+                insert_csv::<FareAttribute, _>(&mut reader, &connection).unwrap()
+            }
+            "fare_rules.txt" => insert_csv::<FareRule, _>(&mut reader, &connection).unwrap(),
+            "timeframes.txt" => insert_csv::<Timeframe, _>(&mut reader, &connection).unwrap(),
+            "fare_media.txt" => insert_csv::<FareMedia, _>(&mut reader, &connection).unwrap(),
+            "fare_products.txt" => insert_csv::<FareProduct, _>(&mut reader, &connection).unwrap(),
+            "fare_leg_rules.txt" => insert_csv::<FareLegRule, _>(&mut reader, &connection).unwrap(),
+            "fare_transfer_rules.txt" => {
+                insert_csv::<FareTransferRule, _>(&mut reader, &connection).unwrap()
+            }
+            "areas.txt" => insert_csv::<Area, _>(&mut reader, &connection).unwrap(),
+            "stop_ares.txt" => insert_csv::<StopArea, _>(&mut reader, &connection).unwrap(),
+            "shapes.txt" => insert_csv::<Shape, _>(&mut reader, &connection).unwrap(),
+            "frequencies.txt" => insert_csv::<Frequency, _>(&mut reader, &connection).unwrap(),
+            "transfers.txt" => insert_csv::<Transfer, _>(&mut reader, &connection).unwrap(),
+            "pathways.txt" => insert_csv::<Pathway, _>(&mut reader, &connection).unwrap(),
+            "levels.txt" => insert_csv::<Level, _>(&mut reader, &connection).unwrap(),
+            "translations.txt" => insert_csv::<Translation, _>(&mut reader, &connection).unwrap(),
+            "feed_info.txt" => insert_csv::<FeedInfo, _>(&mut reader, &connection).unwrap(),
+            "attributions.txt" => insert_csv::<Attribution, _>(&mut reader, &connection).unwrap(),
             _ => (),
         }
     }

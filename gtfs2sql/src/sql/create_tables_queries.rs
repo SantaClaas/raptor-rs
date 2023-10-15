@@ -352,9 +352,9 @@ pub(super) const CREATE_ATTRIBUTIONS_QUERY: &str =
             is_producer BOOLEAN,
             is_operator BOOLEAN,
             is_authority BOOLEAN,
-            attribution_url TEXT,
-            attribution_email TEXT,
-            attribution_phone TEXT,
+            url TEXT,
+            email TEXT,
+            phone TEXT,
             FOREIGN KEY (agency_id) REFERENCES agencies(id),
             FOREIGN KEY (route_id) REFERENCES routes(id),
             FOREIGN KEY (trip_id) REFERENCES trips(id)

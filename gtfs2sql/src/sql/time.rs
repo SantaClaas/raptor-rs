@@ -183,7 +183,7 @@ mod tests {
         ];
 
         // Act
-        let mut results: Vec<Result<Time, ParseTimeError>> = test_values
+        let results: Vec<Result<Time, ParseTimeError>> = test_values
             .iter()
             .map(|string| Time::from_str(string))
             .collect();

@@ -14,15 +14,14 @@ use crate::sql::create_tables_queries::{
     CREATE_TIMEFRAMES_QUERY, CREATE_TRANSFERS_QUERY, CREATE_TRANSLATIONS_QUERY, CREATE_TRIPS_QUERY,
 };
 use crate::sql::queries::*;
-pub(crate) use crate::sql::structs::{Agency, Route, Stop, StopTime, Trip};
-use crate::sql::structs::{
-    Area, Calendar, CalendarDate, FareAttribute, FareLegRule, FareMedia, FareProduct, FareRule,
-    FareTransferRule, FeedInfo, Frequency, Level, Pathway, Shape, StopArea, Transfer, Translation,
+pub(crate) use crate::sql::structs::{
+    Agency, Area, Attribution, Calendar, CalendarDate, FareAttribute, FareLegRule, FareMedia,
+    FareProduct, FareRule, FareTransferRule, FeedInfo, Frequency, Level, Pathway, Route, Shape,
+    Stop, StopArea, StopTime, Timeframe, Transfer, Translation, Trip,
 };
 pub(crate) use crate::sql::time::Time;
 use rusqlite::types::ToSqlOutput;
 use rusqlite::{named_params, Connection, ToSql};
-use std::arch::aarch64::int8x8_t;
 
 pub(crate) fn create_database() -> Result<Connection, rusqlite::Error> {
     let connection = Connection::open("gtfs.db")?;
@@ -207,9 +206,9 @@ impl Insert<CalendarDate> for Connection {
         let mut statement = self.prepare_cached(INSERT_CALENDAR_DATE_QUERY)?;
 
         statement.execute(named_params! {
-        ":service_id": calendar_date.service_id,
-        ":date": calendar_date.date,
-        ":exception_type": calendar_date.exception_type,
+            ":service_id": calendar_date.service_id,
+            ":date": calendar_date.date,
+            ":exception_type": calendar_date.exception_type,
         })?;
 
         Ok(())
@@ -221,13 +220,13 @@ impl Insert<FareAttribute> for Connection {
         let mut statement = self.prepare_cached(INSERT_FARE_ATTRIBUTE_QUERY)?;
 
         statement.execute(named_params! {
-        ":fare_id": fare_attribute.fare_id,
-        ":price": fare_attribute.price,
-        ":currency_type": fare_attribute.currency_type,
-        ":payment_method": fare_attribute.payment_method,
-        ":transfers": fare_attribute.transfers,
-        ":agency_id": fare_attribute.agency_id,
-        ":transfer_duration": fare_attribute.transfer_duration,
+            ":fare_id": fare_attribute.fare_id,
+            ":price": fare_attribute.price,
+            ":currency_type": fare_attribute.currency_type,
+            ":payment_method": fare_attribute.payment_method,
+            ":transfers": fare_attribute.transfers,
+            ":agency_id": fare_attribute.agency_id,
+            ":transfer_duration": fare_attribute.transfer_duration,
         })?;
 
         Ok(())
@@ -271,11 +270,11 @@ impl Insert<FareProduct> for Connection {
         let mut statement = self.prepare_cached(INSERT_FARE_PRODUCT_QUERY)?;
 
         statement.execute(named_params! {
-        ":id": fare_product.id,
-        ":name": fare_product.name,
-        ":media_id": fare_product.media_id,
-        ":amount": fare_product.amount,
-        ":currency": fare_product.currency,
+            ":id": fare_product.id,
+            ":name": fare_product.name,
+            ":media_id": fare_product.media_id,
+            ":amount": fare_product.amount,
+            ":currency": fare_product.currency,
         })?;
 
         Ok(())
@@ -287,11 +286,11 @@ impl Insert<FareRule> for Connection {
         let mut statement = self.prepare_cached(INSERT_FARE_RULE_QUERY)?;
 
         statement.execute(named_params! {
-        ":fare_id": fare_rule.fare_id,
-        ":route_id": fare_rule.route_id,
-        ":origin_id": fare_rule.origin_id,
-        ":destination_id": fare_rule.destination_id,
-        ":contains_id": fare_rule.contains_id,
+            ":fare_id": fare_rule.fare_id,
+            ":route_id": fare_rule.route_id,
+            ":origin_id": fare_rule.origin_id,
+            ":destination_id": fare_rule.destination_id,
+            ":contains_id": fare_rule.contains_id,
         })?;
 
         Ok(())
@@ -303,13 +302,13 @@ impl Insert<FareTransferRule> for Connection {
         let mut statement = self.prepare_cached(INSERT_FARE_TRANSFER_RULE_QUERY)?;
 
         statement.execute(named_params! {
-        ":from_leg_group_id": fare_transfer_rule.from_leg_group_id,
-        ":to_leg_group_id": fare_transfer_rule.to_leg_group_id,
-        ":transfer_count": fare_transfer_rule.transfer_count,
-        ":duration_limit": fare_transfer_rule.duration_limit,
-        ":duration_limit_type": fare_transfer_rule.duration_limit_type,
-        ":fare_transfer_type": fare_transfer_rule.fare_transfer_type,
-        ":fare_product_id": fare_transfer_rule.fare_product_id,
+            ":from_leg_group_id": fare_transfer_rule.from_leg_group_id,
+            ":to_leg_group_id": fare_transfer_rule.to_leg_group_id,
+            ":transfer_count": fare_transfer_rule.transfer_count,
+            ":duration_limit": fare_transfer_rule.duration_limit,
+            ":duration_limit_type": fare_transfer_rule.duration_limit_type,
+            ":fare_transfer_type": fare_transfer_rule.fare_transfer_type,
+            ":fare_product_id": fare_transfer_rule.fare_product_id,
         })?;
 
         Ok(())
@@ -321,15 +320,15 @@ impl Insert<FeedInfo> for Connection {
         let mut statement = self.prepare_cached(INSERT_FEED_INFO_QUERY)?;
 
         statement.execute(named_params! {
-        ":publisher_name": feed_info.publisher_name,
-        ":publisher_url": feed_info.publisher_url,
-        ":language": feed_info.language,
-        ":default_language": feed_info.default_language,
-        ":start_date": feed_info.start_date,
-        ":end_date": feed_info.end_date,
-        ":version": feed_info.version,
-        ":contact_email": feed_info.contact_email,
-        ":contact_url": feed_info.contact_url,
+            ":publisher_name": feed_info.publisher_name,
+            ":publisher_url": feed_info.publisher_url,
+            ":language": feed_info.language,
+            ":default_language": feed_info.default_language,
+            ":start_date": feed_info.start_date,
+            ":end_date": feed_info.end_date,
+            ":version": feed_info.version,
+            ":contact_email": feed_info.contact_email,
+            ":contact_url": feed_info.contact_url,
         })?;
 
         Ok(())
@@ -341,11 +340,11 @@ impl Insert<Frequency> for Connection {
         let mut statement = self.prepare_cached(INSERT_FREQUENCY_QUERY)?;
 
         statement.execute(named_params! {
-        ":trip_id": frequency.trip_id,
-        ":start_time": frequency.start_time,
-        ":end_time": frequency.end_time,
-        ":headway_seconds": frequency.headway_seconds,
-        ":exact_times": frequency.exact_times,
+            ":trip_id": frequency.trip_id,
+            ":start_time": frequency.start_time,
+            ":end_time": frequency.end_time,
+            ":headway_seconds": frequency.headway_seconds,
+            ":exact_times": frequency.exact_times,
         })?;
 
         Ok(())
@@ -357,9 +356,9 @@ impl Insert<Level> for Connection {
         let mut statement = self.prepare_cached(INSERT_LEVEL_QUERY)?;
 
         statement.execute(named_params! {
-        ":id": level.id,
-        ":index": level.index,
-        ":name": level.name,
+            ":id": level.id,
+            ":index": level.index,
+            ":name": level.name,
         })?;
 
         Ok(())
@@ -371,18 +370,18 @@ impl Insert<Pathway> for Connection {
         let mut statement = self.prepare_cached(INSERT_PATHWAY_QUERY)?;
 
         statement.execute(named_params! {
-        ":id": pathway.id,
-        ":from_stop_id": pathway.from_stop_id,
-        ":to_stop_id": pathway.to_stop_id,
-        ":mode": pathway.mode,
-        ":is_bidirectional": pathway.is_bidirectional,
-        ":length": pathway.length,
-        ":traversal_time": pathway.traversal_time,
-        ":stair_count": pathway.stair_count,
-        ":maximum_slope": pathway.maximum_slope,
-        ":minimum_width": pathway.minimum_width,
-        ":signposted_as": pathway.signposted_as,
-        ":reversed_signposted_as": pathway.reversed_signposted_as,
+            ":id": pathway.id,
+            ":from_stop_id": pathway.from_stop_id,
+            ":to_stop_id": pathway.to_stop_id,
+            ":mode": pathway.mode,
+            ":is_bidirectional": pathway.is_bidirectional,
+            ":length": pathway.length,
+            ":traversal_time": pathway.traversal_time,
+            ":stair_count": pathway.stair_count,
+            ":maximum_slope": pathway.maximum_slope,
+            ":minimum_width": pathway.minimum_width,
+            ":signposted_as": pathway.signposted_as,
+            ":reversed_signposted_as": pathway.reversed_signposted_as,
         })?;
 
         Ok(())
@@ -394,11 +393,11 @@ impl Insert<Shape> for Connection {
         let mut statement = self.prepare_cached(INSERT_SHAPE_QUERY)?;
 
         statement.execute(named_params! {
-        ":id": shape.id,
-        ":point_latitude": shape.point_latitude,
-        ":point_longitude": shape.point_longitude,
-        ":point_sequence": shape.point_sequence,
-        ":distance_traveled": shape.distance_traveled,
+            ":id": shape.id,
+            ":point_latitude": shape.point_latitude,
+            ":point_longitude": shape.point_longitude,
+            ":point_sequence": shape.point_sequence,
+            ":distance_traveled": shape.distance_traveled,
         })?;
 
         Ok(())
@@ -422,14 +421,14 @@ impl Insert<Transfer> for Connection {
         let mut statement = self.prepare_cached(INSERT_TRANSFER_QUERY)?;
 
         statement.execute(named_params! {
-        ":from_stop_id": transfer.from_stop_id,
-        ":to_stop_id": transfer.to_stop_id,
-        ":from_route_id": transfer.from_route_id,
-        ":to_route_id": transfer.to_route_id,
-        ":from_trip_id": transfer.from_trip_id,
-        ":to_trip_id": transfer.to_trip_id,
-        ":type": transfer.r#type,
-        ":minimum_transfer_time": transfer.minimum_transfer_time,
+            ":from_stop_id": transfer.from_stop_id,
+            ":to_stop_id": transfer.to_stop_id,
+            ":from_route_id": transfer.from_route_id,
+            ":to_route_id": transfer.to_route_id,
+            ":from_trip_id": transfer.from_trip_id,
+            ":to_trip_id": transfer.to_trip_id,
+            ":type": transfer.r#type,
+            ":minimum_transfer_time": transfer.minimum_transfer_time,
         })?;
 
         Ok(())
@@ -441,13 +440,60 @@ impl Insert<Translation> for Connection {
         let mut statement = self.prepare_cached(INSERT_TRANSLATION_QUERY)?;
 
         statement.execute(named_params! {
-        ":table_name": translation.table_name,
-        ":field_name": translation.field_name,
-        ":language": translation.language,
-        ":translation": translation.translation,
-        ":record_id": translation.record_id,
-        ":record_sub_id": translation.record_sub_id,
-        ":field_value": translation.field_value,
+            ":table_name": translation.table_name,
+            ":field_name": translation.field_name,
+            ":language": translation.language,
+            ":translation": translation.translation,
+            ":record_id": translation.record_id,
+            ":record_sub_id": translation.record_sub_id,
+            ":field_value": translation.field_value,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl Insert<Timeframe> for Connection {
+    fn insert(&self, timeframe: Timeframe) -> rusqlite::Result<()> {
+        let mut statement = self.prepare_cached(INSERT_TIMEFRAME_QUERY)?;
+
+        statement.execute(named_params! {
+            ":group_id": timeframe.group_id,
+            ":start_time": timeframe.start_time,
+            ":end_time": timeframe.end_time,
+            ":service_id": timeframe.service_id,
+        })?;
+
+        Ok(())
+    }
+}
+
+impl Insert<Area> for Connection {
+    fn insert(&self, area: Area) -> rusqlite::Result<()> {
+        let mut statement = self.prepare_cached(INSERT_AREA_QUERY)?;
+
+        statement.execute(named_params! {":id" :    area.id, ":name"     : area.name})?;
+
+        Ok(())
+    }
+}
+
+impl Insert<Attribution> for Connection {
+    fn insert(&self, attribution: Attribution) -> rusqlite::Result<()> {
+        let mut statement = self.prepare_cached(INSERT_ATTRIBUTION_QUERY)?;
+
+        statement.execute(named_params! {
+            ":id": attribution.id,
+            ":agency_id": attribution.agency_id,
+            ":route_id": attribution.route_id,
+            ":trip_id": attribution.trip_id,
+            ":organization_name": attribution.organization_name,
+            ":is_producer": attribution.is_producer,
+            ":is_operator": attribution.is_operator,
+            ":is_authority": attribution.is_authority,
+            ":url": attribution.url,
+            ":email": attribution.email,
+            ":phone": attribution.phone,
         })?;
 
         Ok(())
