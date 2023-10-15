@@ -113,13 +113,13 @@ pub(crate) struct StopTime {
 #[derive(Debug, Deserialize)]
 pub(crate) struct Calendar {
     pub(crate) service_id: String,
-    pub(crate) monday: bool,
-    pub(crate) tuesday: bool,
-    pub(crate) wednesday: bool,
-    pub(crate) thursday: bool,
-    pub(crate) friday: bool,
-    pub(crate) saturday: bool,
-    pub(crate) sunday: bool,
+    pub(crate) monday: u8,
+    pub(crate) tuesday: u8,
+    pub(crate) wednesday: u8,
+    pub(crate) thursday: u8,
+    pub(crate) friday: u8,
+    pub(crate) saturday: u8,
+    pub(crate) sunday: u8,
     pub(crate) start_date: String,
     pub(crate) end_date: String,
 }
@@ -263,7 +263,7 @@ pub(crate) struct Pathway {
 
     #[serde(rename = "pathway_mode")]
     pub(crate) mode: u8,
-    pub(crate) is_bidirectional: bool,
+    pub(crate) is_bidirectional: u8,
     pub(crate) length: Option<usize>,
     pub(crate) traversal_time: Option<usize>,
     pub(crate) stair_count: Option<usize>,
@@ -305,17 +305,17 @@ pub(crate) struct FeedInfo {
     #[serde(rename = "feed_lang")]
     pub(crate) language: String,
     #[serde(rename = "default_lang")]
-    pub(crate) default_language: String,
+    pub(crate) default_language: Option<String>,
     #[serde(rename = "feed_start_date")]
-    pub(crate) start_date: String,
+    pub(crate) start_date: Option<String>,
     #[serde(rename = "feed_end_date")]
-    pub(crate) end_date: String,
+    pub(crate) end_date: Option<String>,
     #[serde(rename = "feed_version")]
-    pub(crate) version: String,
+    pub(crate) version: Option<String>,
     #[serde(rename = "feed_contact_email")]
-    pub(crate) contact_email: String,
+    pub(crate) contact_email: Option<String>,
     #[serde(rename = "feed_contact_url")]
-    pub(crate) contact_url: String,
+    pub(crate) contact_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -326,9 +326,9 @@ pub(crate) struct Attribution {
     pub(crate) route_id: Option<String>,
     pub(crate) trip_id: Option<String>,
     pub(crate) organization_name: String,
-    pub(crate) is_producer: Option<bool>,
-    pub(crate) is_operator: Option<bool>,
-    pub(crate) is_authority: Option<bool>,
+    pub(crate) is_producer: Option<u8>,
+    pub(crate) is_operator: Option<u8>,
+    pub(crate) is_authority: Option<u8>,
     #[serde(rename = "attribution_url")]
     pub(crate) url: Option<String>,
     #[serde(rename = "attribution_email")]

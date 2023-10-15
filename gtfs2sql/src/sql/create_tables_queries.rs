@@ -249,8 +249,8 @@ pub(super) const CREATE_SHAPES_QUERY: &str =
             point_latitude REAL NOT NULL,
             point_longitude REAL NOT NULL,
             point_sequence INTEGER NOT NULL,
-            distance_traveled REAL NOT NULL,
-            PRIMARY KEY (id, point_latitude)
+            distance_traveled REAL,
+            PRIMARY KEY (id, point_sequence)
         );";
 pub(super) const CREATE_FREQUENCIES_QUERY: &str =
     /*language=sqlite*/

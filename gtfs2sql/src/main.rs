@@ -11,6 +11,7 @@ use std::path::Path;
 
 use std::time::SystemTime;
 use zip::read::ZipFile;
+use zip::result::ZipError::FileNotFound;
 use zip::ZipArchive;
 
 const REQUIRED_FILES: [&'static str; 5] = [
@@ -145,9 +146,14 @@ fn main() {
 
     for file_name in CONDITIONALLY_REQUIRED_FILES {
         println!("Reading {file_name}");
-        let file = archive
-            .by_name(file_name)
-            .expect("Required file is missing");
+        let result = archive
+            .by_name(file_name);
+
+        if let Err(FileNotFound) = result {
+            continue;
+        }
+
+        let file = result.expect("Unhandled error");
         let mut reader = Reader::from_reader(file);
         match file_name {
             "calendar.txt" => insert_csv::<Calendar, _>(&mut reader, &connection).unwrap(),
@@ -159,10 +165,17 @@ fn main() {
     }
 
     for file_name in OPTIONAL_FILES {
+        let result = archive
+            .by_name(file_name);
+
+        if let Err(FileNotFound) = result {
+
+            println!("Not provided {file_name}");
+            continue;
+        }
+
         println!("Reading {file_name}");
-        let file = archive
-            .by_name(file_name)
-            .expect("Required file is missing");
+        let file = result.expect("Unhandled error");
         let mut reader = Reader::from_reader(file);
         match file_name {
             "fare_attributes.txt" => {
@@ -186,7 +199,9 @@ fn main() {
             "translations.txt" => insert_csv::<Translation, _>(&mut reader, &connection).unwrap(),
             "feed_info.txt" => insert_csv::<FeedInfo, _>(&mut reader, &connection).unwrap(),
             "attributions.txt" => insert_csv::<Attribution, _>(&mut reader, &connection).unwrap(),
-            _ => (),
+
+            // _ => (),
+            other => println!("Not read: {other}")
         }
     }
 }
