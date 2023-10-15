@@ -4,6 +4,7 @@
 
 # Generated database files
 *.db
+*.db-journal
 
 # MacOS things
 .DS_Store
