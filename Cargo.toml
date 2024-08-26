@@ -1,3 +1,6 @@
 [workspace]
 members = ["api", "raptor", "gtfs2sql"]
 resolver = "2"
+
+[workspace.dependencies]
+rusqlite = "0.32.1"
