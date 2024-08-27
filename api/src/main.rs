@@ -35,7 +35,7 @@ fn old_main() {
     )
         .unwrap();
 
-    //TODO check if trip ids is needed
+    //TODO check if trip ids are needed
     let (routes_data, stops_data, _trip_ids) =
         assemble_raptor_data(step_2_result, stops, transfers);
 
@@ -164,7 +164,7 @@ async fn get_stop_id(connection: &libsql::Connection, stop_name: &str) -> Result
 }
 
 async fn index(State(state): State<AppState>, Query(request): Query<SearchConnectionRequest>) -> impl IntoResponse {
-    
+
     match request {
         SearchConnectionRequest {
             start: Some(start),

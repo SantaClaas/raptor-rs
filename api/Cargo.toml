@@ -21,7 +21,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 thiserror = "1.0.61"
 # Async runtime
 tokio = { version = "1.37.0", features = ["full"] }
-libsql = "0.5.0"
+libsql = { workspace = true }
 # Tokio utilities like file system access
 tower-http = { version = "0.5.2", features = ["fs"] }
 log = "0.4.22"
