@@ -8,3 +8,21 @@ edition = "2021"
 [dependencies]
 rusqlite = { workspace = true }
 raptor = { path = "../raptor" }
+
+# For HTML templating
+askama = "0.12.1"
+askama_axum = "0.4.0"
+# Web server framework
+axum = "0.7.5"
+# For logging and telemetry to get better insights into what is going on inisde the app
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+# Useful macros to make implementing errors easier
+thiserror = "1.0.61"
+# Async runtime
+tokio = { version = "1.37.0", features = ["full"] }
+libsql = "0.5.0"
+# Tokio utilities like file system access
+tower-http = { version = "0.5.2", features = ["fs"] }
+log = "0.4.22"
+serde = { version = "1.0.209", features = ["derive"] }

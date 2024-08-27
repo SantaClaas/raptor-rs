@@ -1,18 +1,8 @@
-mod create_tables_queries;
 mod queries;
 mod structs;
 
 mod time;
 
-use crate::sql::create_tables_queries::{
-    CREATE_AGENCIES_QUERY, CREATE_AREAS_QUERY, CREATE_ATTRIBUTIONS_QUERY,
-    CREATE_CALENDAR_DATES_QUERY, CREATE_CALENDAR_QUERY, CREATE_FARE_ATTRIBUTES_QUERY,
-    CREATE_FARE_LEG_RULES_QUERY, CREATE_FARE_MEDIA_QUERY, CREATE_FARE_PRODUCTS_QUERY,
-    CREATE_FARE_RULES_QUERY, CREATE_FARE_TRANSFER_RULES_QUERY, CREATE_FEED_INFO_QUERY,
-    CREATE_FREQUENCIES_QUERY, CREATE_LEVELS_QUERY, CREATE_PATHWAYS_QUERY, CREATE_ROUTES_QUERY,
-    CREATE_SHAPES_QUERY, CREATE_STOPS_QUERY, CREATE_STOP_AREAS_QUERY, CREATE_STOP_TIMES_QUERY,
-    CREATE_TIMEFRAMES_QUERY, CREATE_TRANSFERS_QUERY, CREATE_TRANSLATIONS_QUERY, CREATE_TRIPS_QUERY,
-};
 use crate::sql::queries::*;
 pub(crate) use crate::sql::structs::{
     Agency, Area, Attribution, Calendar, CalendarDate, FareAttribute, FareLegRule, FareMedia,
@@ -23,36 +13,12 @@ pub(crate) use crate::sql::time::Time;
 use rusqlite::types::ToSqlOutput;
 use rusqlite::{named_params, Connection, ToSql};
 
+const CREATE_TABLES_QUERY: &str = include_str!("create_tables.sql");
+
 pub(crate) fn create_database() -> Result<Connection, rusqlite::Error> {
     let connection = Connection::open("gtfs.db")?;
 
-    &connection.execute(CREATE_AGENCIES_QUERY, [])?;
-    &connection.execute(CREATE_STOPS_QUERY, [])?;
-    &connection.execute(CREATE_ROUTES_QUERY, [])?;
-    &connection.execute(CREATE_TRIPS_QUERY, [])?;
-    &connection.execute(CREATE_STOP_TIMES_QUERY, [])?;
-
-    &connection.execute(CREATE_CALENDAR_QUERY, [])?;
-    &connection.execute(CREATE_CALENDAR_DATES_QUERY, [])?;
-
-    &connection.execute(CREATE_FARE_ATTRIBUTES_QUERY, [])?;
-    &connection.execute(CREATE_FARE_RULES_QUERY, [])?;
-    &connection.execute(CREATE_TIMEFRAMES_QUERY, [])?;
-    &connection.execute(CREATE_FARE_MEDIA_QUERY, [])?;
-    &connection.execute(CREATE_FARE_PRODUCTS_QUERY, [])?;
-    &connection.execute(CREATE_FARE_LEG_RULES_QUERY, [])?;
-    &connection.execute(CREATE_FARE_TRANSFER_RULES_QUERY, [])?;
-    &connection.execute(CREATE_AREAS_QUERY, [])?;
-    &connection.execute(CREATE_STOP_AREAS_QUERY, [])?;
-    &connection.execute(CREATE_SHAPES_QUERY, [])?;
-    &connection.execute(CREATE_FREQUENCIES_QUERY, [])?;
-    &connection.execute(CREATE_TRANSFERS_QUERY, [])?;
-    &connection.execute(CREATE_PATHWAYS_QUERY, [])?;
-    &connection.execute(CREATE_LEVELS_QUERY, [])?;
-    &connection.execute(CREATE_TRANSLATIONS_QUERY, [])?;
-    &connection.execute(CREATE_FEED_INFO_QUERY, [])?;
-    &connection.execute(CREATE_ATTRIBUTIONS_QUERY, [])?;
-
+    connection.execute_batch(CREATE_TABLES_QUERY)?;
     Ok(connection)
 }
 
