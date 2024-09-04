@@ -42,8 +42,54 @@
            hx-params="end">
     <datalist id="end-results"></datalist>
 
+    <label for="departure">Departure</label>
+    {% if let Some(departure) = departure %}
+    {{ departure }}
+    {% endif %}
+    <input type="datetime-local"
+           id="departure"
+           name="departure"
+           required
+           {% if let Some(departure) = departure %}
+           value="{{ departure }}"
+           {% endif %}
+    >
+
     <button type="submit">Find</button>
 </form>
+
+{% if let Some(results) = results %}
+<table>
+    <thead>
+    <tr>
+        <th>Round</th>
+        <th>Stop</th>
+        <th>Route</th>
+        <th>Trip</th>
+        <th>Boarded</th>
+        <th>Exited</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for round in results %}
+    <tr>
+        <td>{{ round.round }}</td>
+    </tr>
+        {% for row in round.rows %}
+        <tr>
+            <td></td>
+            <td>{{ row.stop_name }}</td>
+            <td>{{ row.route }}</td>
+            <td>{{ row.trip_number }}</td>
+            <td>{{ row.boarded }}</td>
+            <td>{{ row.exited }}</td>
+        </tr>
+        {% endfor %}
+    {% endfor %}
+
+</tbody>
+</table>
+{% endif %}
 
 <script src="/htmx.min.js"></script>
 </body>

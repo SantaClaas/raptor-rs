@@ -24,5 +24,7 @@ tokio = { version = "1.37.0", features = ["full"] }
 libsql = { workspace = true }
 # Tokio utilities like file system access
 tower-http = { version = "0.5.2", features = ["fs"] }
-log = "0.4.22"
 serde = { version = "1.0.209", features = ["derive"] }
+sql2raptor = { path = "../sql2raptor" }
+# To handle user time inputs
+time = { version = "0.3.36", features = ["parsing", "serde", "formatting", "macros"] }

@@ -1,108 +1,63 @@
-extern crate core;
-
+use std::collections::HashMap;
+use std::convert::Infallible;
 use std::env;
 use std::env::{current_dir, current_exe};
 use std::net::Ipv4Addr;
-use askama_axum::Template;
-use axum::response::{Html, IntoResponse};
-use axum::{Form, Router};
-use axum::extract::{Query, State};
+use std::sync::Arc;
+use askama_axum::{Response, Template};
+use axum::response::{Html, IntoResponse, Redirect};
+use axum::{async_trait, Form, Router};
+use axum::extract::{FromRef, FromRequestParts, Query, RawQuery, State};
+use axum::http::request::Parts;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use raptor::data::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn};
+use libsql::{named_params, Connection};
 use raptor::{raptor, Time};
-use rusqlite::{named_params, Connection};
 use tower_http::services::ServeDir;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use log::debug;
 use serde::Deserialize;
-use tracing::error;
+use time::format_description::well_known::{Iso8601, Rfc3339};
+use time::{OffsetDateTime, PrimitiveDateTime};
+use time::format_description::well_known;
+use tracing::{debug, error};
+use raptor::shared::{RoutesData, StopsData};
+use sql2raptor::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn, PartialStop};
+use crate::request::{DateTimeLocal, SearchConnectionRequest};
 
-fn old_main() {
-    let connection = Connection::open("gtfs.db").unwrap();
+mod request;
 
+struct RaptorDataSet {
+    index_by_stop_id: HashMap<String, usize>,
+    routes_data: RoutesData,
+    stops_data: StopsData,
+}
+async fn setup_raptor(connection: &libsql::Connection) -> Result<RaptorDataSet, libsql::Error> {
     let GetStopsReturn {
         transfers,
-        stops,
+        stops: partial_stops,
         index_by_stop_id,
-    } = get_stops(&connection).unwrap();
+    } = get_stops(&connection).await?;
 
     let step_2_result = get_routes(
         &connection,
         //TODO remove debug clone clown
         index_by_stop_id.clone(),
-    )
-        .unwrap();
+    ).await?;
 
     //TODO check if trip ids are needed
     let (routes_data, stops_data, _trip_ids) =
-        assemble_raptor_data(step_2_result, stops, transfers);
+        assemble_raptor_data(step_2_result, partial_stops, transfers);
 
-    let dream_source_stop_id = "1808";
-    let dream_target_stop_id = "1811";
-    let source_index = *index_by_stop_id.get(dream_source_stop_id).unwrap();
-    let target_index = *index_by_stop_id.get(dream_target_stop_id).unwrap();
-    let departure = Time::from(12 * 60 * 60);
-
-    //TODO remove clown copy
-    let stops = stops_data.stops.clone();
-    let results = raptor(
-        source_index,
-        target_index,
-        &departure,
-        routes_data,
-        stops_data,
-    );
-
-    let mut statement = connection
-        .prepare("SELECT name FROM stops WHERE id = :id")
-        .unwrap();
-
-    let mut get_stop_name = |stop_index: usize| -> String {
-        let stop_id = &stops[stop_index].id;
-        statement
-            .query_row(named_params! {":id": stop_id}, |row| {
-                row.get::<_, String>("name")
-            })
-            .unwrap()
-    };
-
-    let from = get_stop_name(source_index);
-    let to = get_stop_name(target_index);
-    println!("From {from} to {to}");
-
-    let mut round = 1;
-    for result in results {
-        println!("Round {round} reached stops...");
-        for (stop_index, connection) in result {
-            let stop_name = get_stop_name(stop_index);
-
-            print!("\t{stop_name}:\t");
-            match connection {
-                raptor::Connection::Connection {
-                    route,
-                    trip_number,
-                    boarded_at_stop,
-                    exited_at_stop,
-                } => {
-                    let boarded = get_stop_name(boarded_at_stop);
-                    let exited = get_stop_name(exited_at_stop);
-                    println!("Route {route} Trip {trip_number} Connection {boarded} -> {exited}");
-                }
-                raptor::Connection::FootPath { .. } => {}
-            }
-        }
-        println!();
-
-        round += 1;
-    }
+    Ok(RaptorDataSet { index_by_stop_id, routes_data, stops_data })
 }
 
 #[derive(Clone)]
 struct AppState {
     connection: libsql::Connection,
+    raptor_data: Arc<RaptorDataSet>,
 }
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
@@ -115,7 +70,10 @@ async fn main() {
 
     let database = libsql::Builder::new_local("gtfs.db").build().await.unwrap();
     let connection = database.connect().unwrap();
-    let state = AppState { connection };
+
+    let raptor_data = setup_raptor(&connection).await.unwrap();
+
+    let state = AppState { connection, raptor_data: Arc::new(raptor_data) };
 
 
     let app = Router::new()
@@ -137,6 +95,17 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
+struct Round {
+    round: usize,
+    rows: Vec<ResultRow>,
+}
+struct ResultRow {
+    stop_name: String,
+    route: usize,
+    trip_number: usize,
+    boarded: String,
+    exited: String,
+}
 
 #[derive(Template, Default)]
 #[template(path = "index.html")]
@@ -146,13 +115,8 @@ struct IndexTemplate {
     end: Option<String>,
     start_error: Option<String>,
     end_error: Option<String>,
-}
-
-
-#[derive(serde::Deserialize)]
-struct SearchConnectionRequest {
-    start: Option<String>,
-    end: Option<String>,
+    departure: Option<String>,
+    results: Option<Vec<Round>>,
 }
 
 async fn get_stop_id(connection: &libsql::Connection, stop_name: &str) -> Result<Option<String>, libsql::Error> {
@@ -162,15 +126,30 @@ async fn get_stop_id(connection: &libsql::Connection, stop_name: &str) -> Result
     let row = rows.next().await?;
     row.map(|row| row.get::<String>(0)).transpose()
 }
-
+fn try_format(departure: &DateTimeLocal) -> Option<String> {
+    match departure.format() {
+        Ok(departure) => Some(departure),
+        Err(error) => {
+            error!("Error formatting departure: {error}");
+            None
+        }
+    }
+}
 async fn index(State(state): State<AppState>, Query(request): Query<SearchConnectionRequest>) -> impl IntoResponse {
-
     match request {
         SearchConnectionRequest {
             start: Some(start),
             end: Some(end),
+            departure: Some(departure),
+            ..
         } => {
             let start_result = get_stop_id(&state.connection, &start).await;
+            // let formatted = departure.format(&well_known::Rfc2822::);
+            // let formatted = departure.format()
+            // debug!("Departure: {formatted:?}");
+            // let result = OffsetDateTime::parse(&departure, &Iso8601::DEFAULT);
+            // debug!("Departure: {departure}");
+
             // Don't proceed if the first already failed
             let Ok(start_id) = start_result else {
                 error!("Error searching for start stop: {start_result:?}");
@@ -178,6 +157,8 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                     error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
                     start: Some(start),
                     end: Some(end),
+                    departure: try_format(&departure),
+
                     ..Default::default()
                 };
                 return template;
@@ -186,10 +167,12 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
             let end_result = get_stop_id(&state.connection, &end).await;
             let Ok(end_id) = end_result else {
                 error!("Error searching for end stop: {end_result:?}");
+
                 let template = IndexTemplate {
                     error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
                     start: Some(start),
                     end: Some(end),
+                    departure: try_format(&departure),
                     ..Default::default()
                 };
                 return template;
@@ -198,9 +181,153 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
             match (start_id, end_id) {
                 (Some(start_id), Some(end_id)) => {
                     //TODO search for connections
+                    debug!("Searching for connection from start id {} to end id {}", &start_id, &end_id);
+
+                    let source_index = *state.raptor_data.index_by_stop_id.get(&start_id).unwrap();
+                    let target_index = *state.raptor_data.index_by_stop_id.get(&end_id).unwrap();
+                    // let (hours, minutes, seconds) = departure.time().as_hms();
+                    let raptor_departure = Time::from(departure.to_seconds());
+                    let rounds = raptor(
+                        source_index,
+                        target_index,
+                        // &raptor_departure,
+                        &raptor_departure,
+                        //TODO remove clone. These should be read only by reference
+                        state.raptor_data.routes_data.clone(),
+                        state.raptor_data.stops_data.clone(),
+                    );
+
+                    let with_id = |(stop_index, connection): (usize, raptor::Connection)| {
+                        let stop_id = state.raptor_data.stops_data.stops[stop_index].id.clone();
+                        (stop_id, connection)
+                    };
+
+                    let collect_ids = |(stop_id, connection): &(String, raptor::Connection)| {
+                        let mut ids = vec![stop_id.clone()];
+
+                        if let raptor::Connection::Connection { boarded_at_stop, exited_at_stop, .. } = connection {
+                            let boarded_id = state.raptor_data.stops_data.stops[*boarded_at_stop].id.clone();
+                            let exited_id = state.raptor_data.stops_data.stops[*exited_at_stop].id.clone();
+                            ids.push(boarded_id);
+                            ids.push(exited_id);
+                        }
+
+                        ids
+                    };
+                    // let with_ids = | mut round: HashMap<usize, Connection>| round.into_iter().map(with_id).collect();
+                    let rounds: Vec<Vec<(String, raptor::Connection)>> = rounds.into_iter().map(|round| round.into_iter().map(with_id).collect()).collect();
+
+                    // Collect all distinct stop ids for a batched SQL query
+                    let mut ids: Vec<String> = rounds.iter().flatten().map(collect_ids).flatten().collect();
+
+                    // Remove duplicates
+                    // Nor sure if this is faster than collecting to a hashset TODO measure
+                    ids.sort();
+                    ids.dedup();
+                    /// Count of ids has to be less than SQLITE_MAX_VARIABLE_NUMBER.
+                    /// See https://www.sqlite.org/lang_expr.html#parameters
+                    let query_parameters = ids.iter().enumerate().map(|(index, _)| format!("?{}", index + 1)).collect::<Vec<String>>().join(", ");
+                    let query = format!("SELECT id, name FROM stops WHERE id IN ({query_parameters})");
+                    // dbg!(&query, libsql::ffi::SQLITE_VAR);
+                    let result = state.connection.query(&query, ids).await;
+                    debug!("Result: {}", result.is_ok());
+                    let mut rows = match result {
+                        Ok(rows) => rows,
+                        Err(error) => {
+                            error!("Error looking up stop names: {error}");
+                            let template = IndexTemplate {
+                                error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
+                                start: Some(start),
+                                end: Some(end),
+                                departure: try_format(&departure),
+                                ..Default::default()
+                            };
+
+                            return template;
+                        }
+                    };
+
+                    let mut names_by_id = HashMap::new();
+                    loop {
+                        let row = match rows.next().await {
+                            Ok(Some(row)) => row,
+                            Ok(None) => break,
+                            Err(error) => {
+                                error!("Error reading stop names rows: {error}");
+                                let template = IndexTemplate {
+                                    error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
+                                    start: Some(start),
+                                    end: Some(end),
+                                    departure: try_format(&departure),
+                                    ..Default::default()
+                                };
+
+                                return template;
+                            }
+                        };
+
+                        let id: String = match row.get(0) {
+                            Ok(id) => id,
+                            Err(error) => {
+                                error!("Error reading id from stop names row: {error}");
+                                let template = IndexTemplate {
+                                    error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
+                                    start: Some(start),
+                                    end: Some(end),
+                                    departure: try_format(&departure),
+                                    ..Default::default()
+                                };
+
+                                return template;
+                            }
+                        };
+
+                        let name: String = match row.get(1) {
+                            Ok(name) => name,
+                            Err(error) => {
+                                error!("Error reading name from stop names row: {error}");
+                                let template = IndexTemplate {
+                                    error: Some("Sorry, something on our side went wrong. Could not search for connections.".to_string()),
+                                    start: Some(start),
+                                    end: Some(end),
+                                    departure: try_format(&departure),
+                                    ..Default::default()
+                                };
+
+                                return template;
+                            }
+                        };
+
+                        names_by_id.insert(id, name);
+                    }
+
+                    let mut results = Vec::new();
+
+                    for (index, round) in rounds.into_iter().enumerate() {
+                        let mut output = Round { round: index, rows: Vec::new() };
+                        for (stop_id, connection) in round {
+                            let raptor::Connection::Connection { route, trip_number, boarded_at_stop, exited_at_stop } = connection else {
+                                error!("Unexpected connection type while constructing output");
+                                continue;
+                            };
+
+                            let stop_name = names_by_id.get(&stop_id).unwrap();
+                            let id = state.raptor_data.stops_data.stops[boarded_at_stop].id.clone();
+                            let boarded = names_by_id.get(&id).unwrap();
+                            let id = state.raptor_data.stops_data.stops[exited_at_stop].id.clone();
+                            let exited = names_by_id.get(&id).unwrap();
+                            // output.push_str(&format!("Stop {stop_name} Route {route} Trip {trip_number} Connection {boarded} -> {exited}\n"));
+                            output.rows.push(ResultRow { stop_name: stop_name.to_string(), route, trip_number, boarded: boarded.to_string(), exited: exited.to_string() });
+                        }
+
+                        results.push(output);
+                    }
+
                     let template = IndexTemplate {
                         start: Some(start),
                         end: Some(end),
+                        departure: try_format(&departure),
+                        results: Some(results),
                         ..Default::default()
                     };
                     template
@@ -213,6 +340,7 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                         end_error,
                         start: Some(start),
                         end: Some(end),
+                        departure: try_format(&departure),
                         ..Default::default()
                     };
                     template
@@ -221,8 +349,9 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
         }
         SearchConnectionRequest {
             start,
-            end
-        } => IndexTemplate { start, end, ..Default::default() },
+            end,
+            departure,
+        } => IndexTemplate { start, end, departure: departure.as_ref().and_then(try_format), ..Default::default() },
     }
 }
 
@@ -244,7 +373,7 @@ async fn search_stops(connection: &libsql::Connection, query: &str) -> impl Into
 
     let result = connection.query(
         "SELECT name FROM stop_names WHERE stop_names MATCH concat('name:', :query) ORDER BY rank;",
-        libsql::named_params! {":query": query }).await;
+        libsql::named_params! {":query": format!("\"{}\"", query) }).await;
 
     let mut rows = match result {
         Ok(rows) => rows,
