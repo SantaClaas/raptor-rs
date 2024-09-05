@@ -95,10 +95,7 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-struct Round {
-    round: usize,
-    rows: Vec<ResultRow>,
-}
+#[derive(serde::Serialize)]
 struct ResultRow {
     stop_name: String,
     route: usize,
@@ -116,7 +113,7 @@ struct IndexTemplate {
     start_error: Option<String>,
     end_error: Option<String>,
     departure: Option<String>,
-    results: Option<Vec<Round>>,
+    results: Option<Vec<Vec<ResultRow>>>,
 }
 
 async fn get_stop_id(connection: &libsql::Connection, stop_name: &str) -> Result<Option<String>, libsql::Error> {
@@ -190,12 +187,13 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                     let rounds = raptor(
                         source_index,
                         target_index,
-                        // &raptor_departure,
                         &raptor_departure,
                         //TODO remove clone. These should be read only by reference
                         state.raptor_data.routes_data.clone(),
                         state.raptor_data.stops_data.clone(),
                     );
+
+                    dbg!(&rounds[0].len());
 
                     let with_id = |(stop_index, connection): (usize, raptor::Connection)| {
                         let stop_id = state.raptor_data.stops_data.stops[stop_index].id.clone();
@@ -230,7 +228,6 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                     let query = format!("SELECT id, name FROM stops WHERE id IN ({query_parameters})");
                     // dbg!(&query, libsql::ffi::SQLITE_VAR);
                     let result = state.connection.query(&query, ids).await;
-                    debug!("Result: {}", result.is_ok());
                     let mut rows = match result {
                         Ok(rows) => rows,
                         Err(error) => {
@@ -303,8 +300,8 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
 
                     let mut results = Vec::new();
 
-                    for (index, round) in rounds.into_iter().enumerate() {
-                        let mut output = Round { round: index, rows: Vec::new() };
+                    for round in rounds.into_iter() {
+                        let mut output = Vec::new();
                         for (stop_id, connection) in round {
                             let raptor::Connection::Connection { route, trip_number, boarded_at_stop, exited_at_stop } = connection else {
                                 error!("Unexpected connection type while constructing output");
@@ -316,8 +313,7 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                             let boarded = names_by_id.get(&id).unwrap();
                             let id = state.raptor_data.stops_data.stops[exited_at_stop].id.clone();
                             let exited = names_by_id.get(&id).unwrap();
-                            // output.push_str(&format!("Stop {stop_name} Route {route} Trip {trip_number} Connection {boarded} -> {exited}\n"));
-                            output.rows.push(ResultRow { stop_name: stop_name.to_string(), route, trip_number, boarded: boarded.to_string(), exited: exited.to_string() });
+                            output.push(ResultRow { stop_name: stop_name.to_string(), route, trip_number, boarded: boarded.to_string(), exited: exited.to_string() });
                         }
 
                         results.push(output);

@@ -43,9 +43,6 @@
     <datalist id="end-results"></datalist>
 
     <label for="departure">Departure</label>
-    {% if let Some(departure) = departure %}
-    {{ departure }}
-    {% endif %}
     <input type="datetime-local"
            id="departure"
            name="departure"
@@ -73,9 +70,9 @@
     <tbody>
     {% for round in results %}
     <tr>
-        <td>{{ round.round }}</td>
+        <td>{{ loop.index }}</td>
     </tr>
-        {% for row in round.rows %}
+        {% for row in round %}
         <tr>
             <td></td>
             <td>{{ row.stop_name }}</td>

@@ -28,3 +28,4 @@ serde = { version = "1.0.209", features = ["derive"] }
 sql2raptor = { path = "../sql2raptor" }
 # To handle user time inputs
 time = { version = "0.3.36", features = ["parsing", "serde", "formatting", "macros"] }
+serde_json = "1.0.128"

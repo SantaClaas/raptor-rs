@@ -67,12 +67,12 @@ impl From<u64> for Time {
 impl Display for Time {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Infinite => write!(formatter, "Time Infinite"),
+            Infinite => write!(formatter, "Infinite"),
             Finite(seconds) => {
                 // Idk how to do basic math
                 let (seconds, minutes) = (seconds % 60, seconds / 60);
                 let (seconds, minutes, hours) = (seconds, minutes % 60, minutes / 60);
-                write!(formatter, "Time {hours}:{minutes}:{seconds}")
+                write!(formatter, "{hours}:{minutes}:{seconds}")
             }
         }
     }
@@ -119,6 +119,7 @@ pub fn raptor(
     route_data: RoutesData,
     stops: StopsData,
 ) -> Vec<HashMap<usize, Connection>> {
+
     let mut k = 0usize;
 
     // For each round the best arrival by stop. Index is amount of transfers or k - 1
@@ -129,11 +130,15 @@ pub fn raptor(
     let mut connections_by_round = Vec::new();
 
     let mut marked_stops = HashSet::from([&source]);
-    let mut queue: HashMap<&usize, &usize> = HashMap::new();
+    // Stops by route
+    // Don't use HashMap because it doesn't ensure ordering (it actually randomizes the order)
+    // TODO measure if VecDeque is faster but we don't need it as we remove elements all at once when iterating
+    let mut queue = Vec::<(&usize, &usize)>::new();
 
     while !marked_stops.is_empty() {
         k += 1;
         let last_round_labels = &labels_by_round[k - 1];
+
         let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
         // Best connection for current round by the stop the connection reaches
         // For journey reconstruction
@@ -145,12 +150,18 @@ pub fn raptor(
             .map(|stop| (*stop, stops.get_routes(stop)))
             .collect();
 
+        //TODO use consume queue when iterating below and remove clear
         queue.clear();
+
         for p in &marked_stops {
             let routes_serving_p = routes_at_stop[p];
 
             for route in routes_serving_p {
-                if let Some(p_other) = queue.get(route) {
+                // If there is another stop that we reached, and it serves the same route,
+                // check if we can replace the other stop with the current one
+                //TODO measure performance impact of sequential search
+                if let Some(p_other_index) = queue.iter().position(|(queued_route, _p_other)| *queued_route == route) {
+                    let p_other = &queue[p_other_index].1;
                     let route_value = &route_data.routes[*route];
                     let sequence = &route_data.get_stop_sequence(route_value, p).unwrap();
                     let sequence_other =
@@ -158,12 +169,17 @@ pub fn raptor(
 
                     // If p comes before p' (p_other) replace p' with p
                     if sequence < sequence_other {
-                        &queue.insert(route, p);
+                        queue[p_other_index] = (route, p);
+                        // Continue loop
                     }
+                    // Else if the stop p doesn't come before p' (p_other), the other reached stop
+                    // reaches the route earlier than p, so we can't replace p' with p, and we don't
+                    // need to add p to the queue
                     continue;
                 }
 
-                let _ = &queue.insert(route, p);
+                // Else add to queue
+                queue.push((route, p));
             }
         }
 
@@ -177,6 +193,7 @@ pub fn raptor(
 
             // Traverse stops in route starting with marked stop
             let start_sequence = route_stops.iter().position(|stop| &stop == p).unwrap();
+
             for stop_sequence in start_sequence..route_stops.len() {
                 // Stop (index) of the stop in the trip we traverse
                 let trip_stop = &route_stops[stop_sequence];
@@ -194,6 +211,7 @@ pub fn raptor(
 
                     //TODO consider minimum time it takes to transfer between lines/routes/trips
                     //TODO check if we can drop off at stop
+
                     if &arrival_time < min(earliest_arrival, earliest_arrival_target) {
                         current_round_labels.insert(*trip_stop, *arrival_time);
                         best_by_stop.insert(*trip_stop, arrival_time);
@@ -227,7 +245,7 @@ pub fn raptor(
             }
         }
 
-        // Can not change marked stops while iterating so we save them here temporarily
+        // Can not change marked stops while iterating, so we save them here temporarily
         let mut new_marks = HashSet::new();
         // Look at foot-paths
         for p in &marked_stops {
@@ -268,7 +286,7 @@ pub fn raptor(
         connections_by_round.push(connection_by_stop);
     }
 
-    return connections_by_round;
+    connections_by_round
 }
 
 #[test]
