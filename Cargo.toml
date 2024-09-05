@@ -1,5 +1,5 @@
 [workspace]
-members = ["api", "raptor", "gtfs2sql", "sql2raptor"]
+members = ["api", "raptor", "gtfs2sql", "sql2raptor", "benchmark"]
 resolver = "2"
 
 [workspace.dependencies]
