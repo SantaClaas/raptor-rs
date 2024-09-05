@@ -1,4 +1,4 @@
-pub mod data;
+pub mod shared;
 
 use crate::Time::{Finite, Infinite};
 use std::cmp::{min, Ordering};
@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
+use shared::{RoutesData, StopTime, StopsData};
 
 /// Represents a time stamp for various structures in RAPTOR.
 /// The value represents a time after midnight for a day. It can be greater than 24h if a stop on a
@@ -66,12 +67,12 @@ impl From<u64> for Time {
 impl Display for Time {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Infinite => write!(formatter, "Time Infinite"),
+            Infinite => write!(formatter, "Infinite"),
             Finite(seconds) => {
                 // Idk how to do basic math
                 let (seconds, minutes) = (seconds % 60, seconds / 60);
                 let (seconds, minutes, hours) = (seconds, minutes % 60, minutes / 60);
-                write!(formatter, "Time {hours}:{minutes}:{seconds}")
+                write!(formatter, "{hours}:{minutes}:{seconds}")
             }
         }
     }
@@ -97,145 +98,8 @@ fn format_time() {
     assert_eq!(expected, actual);
 }
 
-/// The departure and arrival time of a trip at a stop
-pub(crate) struct StopTime {
-    pub(crate) departure_time: Time,
-    pub(crate) arrival_time: Time,
-}
-
-/// A route or line in a transportation network. A route has multiple trips a day.
-/// In contrast to GTFS data a route has always the same sequence of stops in its trips.
-/// This means there is a separate route for every trip in GTFS where the sequence of stops or
-/// direction is not the same
-pub(crate) struct Route {
-    /// Number of trips in a route. You can get the length of the block in StopTimes that represent
-    /// all trips of this route by multiplying this with number_of_stops
-    pub(crate) number_of_trips: usize,
-
-    /// The number of stops per trip of this route. The number of trips is the same per trip.
-    pub(crate) number_of_stops: usize,
-
-    /// Pointer to the index that starts the block in the RouteStops array for the stops of this route
-    pub(crate) route_stops_start_index: usize,
-
-    /// Pointer to the index that starts the first block of StopTimes for the first trip
-    pub(crate) stop_times_start_index: usize,
-}
-
-pub struct RoutesData {
-    /// This array is divided into blocks, and the i-th block contains all trips corresponding
-    /// to route ri. Within a block, trips are sorted by departure time (at the first stop).
-    /// Each trip is just a sequence of stop times, represented by the corresponding arrival
-    /// and departure times.
-    pub(crate) stop_times: Vec<StopTime>,
-    pub(crate) routes: Vec<Route>,
-    /// The stops for routes where segments represent stops sequence for routes
-    /// The first entries belong to routes[0] then the next to route[1] and so on...
-    pub(crate) route_stops: Vec<usize>,
-}
-
-impl RoutesData {
-    fn get_stop_times(&self, route: &Route) -> &[StopTime] {
-        let start = route.stop_times_start_index;
-        let length = route.number_of_trips * route.number_of_stops;
-        let end = start + length;
-        &self.stop_times[start..end]
-    }
-
-    fn get_route_stops(&self, route: &Route) -> &[usize] {
-        let start = route.route_stops_start_index;
-        let end = start + route.number_of_stops;
-        &self.route_stops[start..end]
-    }
-
-    /// Get the sequence for a stop on the given route
-    /// Returns none if the stop is not on the route otherwise the sequence index of the stop on the
-    /// route
-    fn get_stop_sequence(&self, route: &Route, stop: &usize) -> Option<usize> {
-        let route_stops = self.get_route_stops(route);
-        route_stops
-            .iter()
-            .position(|route_stop| &route_stop == &stop)
-    }
-
-    /// Get the earliest trip departing from a stop along the route after some time
-    /// returns the number of the trip in the route (index in sequence of trips for route) and the
-    /// trip stop times
-    fn get_earliest_departing_trip(
-        &self,
-        route: &Route,
-        // The sequence of the stop on the route for which the next trip departing should be found
-        from_stop_sequence: &usize,
-        after: &Time,
-    ) -> Option<(usize, &[StopTime])> {
-        // Assume we get have the stop_sequence
-        let stop_times = self.get_stop_times(route);
-        for trip_index in 0..route.number_of_trips {
-            let trip_start = trip_index * route.number_of_stops;
-            let stop_time = &stop_times[trip_start + from_stop_sequence];
-            if &stop_time.departure_time > after {
-                let trip_end = trip_start + route.number_of_stops;
-                let trip = &stop_times[trip_start..trip_end];
-                return Some((trip_index, trip));
-            }
-        }
-
-        return None;
-    }
-}
-
-#[derive(Clone)]
-pub struct Stop {
-    pub id: String,
-    pub(crate) transfers_index_start: usize,
-    pub(crate) stop_routes_index_start: usize,
-    pub(crate) transfers_count: usize,
-    pub(crate) stop_routes_count: usize,
-}
-
-impl Hash for Stop {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state)
-    }
-}
-
-impl PartialEq<Self> for Stop {
-    fn eq(&self, other: &Self) -> bool {
-        self.id.eq(&other.id)
-    }
-}
-
-impl Eq for Stop {}
-
-/// A transfer that leaves a stop and allows reaching another stop by foot path
-pub struct Transfer {
-    /// The target stop that can be reached by foot through this foot-path
-    pub(crate) target: usize,
-    /// Time it takes to reach the target stop by foot
-    pub(crate) time: Time,
-}
-
-pub struct StopsData {
-    pub(crate) transfers: Vec<Transfer>,
-    pub stops: Vec<Stop>,
-    /// Not the routes themselves but the indices of in the route data
-    pub(crate) stop_routes: Vec<usize>,
-}
-
-impl StopsData {
-    fn get_routes_for(&self, stop: &Stop) -> &[usize] {
-        let start = stop.stop_routes_index_start;
-        let end = start + stop.stop_routes_count;
-        &self.stop_routes[start..end]
-    }
-
-    fn get_routes(&self, stop: &usize) -> &[usize] {
-        let stop = &self.stops[*stop];
-        self.get_routes_for(stop)
-    }
-}
-
 /// A connection between two stops
+#[derive(Clone)]
 pub enum Connection {
     /// By using a trip with on a route with the respective transportation
     Connection {
@@ -255,6 +119,7 @@ pub fn raptor(
     route_data: RoutesData,
     stops: StopsData,
 ) -> Vec<HashMap<usize, Connection>> {
+
     let mut k = 0usize;
 
     // For each round the best arrival by stop. Index is amount of transfers or k - 1
@@ -265,11 +130,15 @@ pub fn raptor(
     let mut connections_by_round = Vec::new();
 
     let mut marked_stops = HashSet::from([&source]);
-    let mut queue: HashMap<&usize, &usize> = HashMap::new();
+    // Stops by route
+    // Don't use HashMap because it doesn't ensure ordering (it actually randomizes the order)
+    // TODO measure if VecDeque is faster but we don't need it as we remove elements all at once when iterating
+    let mut queue = Vec::<(&usize, &usize)>::new();
 
     while !marked_stops.is_empty() {
         k += 1;
         let last_round_labels = &labels_by_round[k - 1];
+
         let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
         // Best connection for current round by the stop the connection reaches
         // For journey reconstruction
@@ -281,12 +150,18 @@ pub fn raptor(
             .map(|stop| (*stop, stops.get_routes(stop)))
             .collect();
 
+        //TODO use consume queue when iterating below and remove clear
         queue.clear();
+
         for p in &marked_stops {
             let routes_serving_p = routes_at_stop[p];
 
             for route in routes_serving_p {
-                if let Some(p_other) = queue.get(route) {
+                // If there is another stop that we reached, and it serves the same route,
+                // check if we can replace the other stop with the current one
+                //TODO measure performance impact of sequential search
+                if let Some(p_other_index) = queue.iter().position(|(queued_route, _p_other)| *queued_route == route) {
+                    let p_other = &queue[p_other_index].1;
                     let route_value = &route_data.routes[*route];
                     let sequence = &route_data.get_stop_sequence(route_value, p).unwrap();
                     let sequence_other =
@@ -294,12 +169,17 @@ pub fn raptor(
 
                     // If p comes before p' (p_other) replace p' with p
                     if sequence < sequence_other {
-                        &queue.insert(route, p);
+                        queue[p_other_index] = (route, p);
+                        // Continue loop
                     }
+                    // Else if the stop p doesn't come before p' (p_other), the other reached stop
+                    // reaches the route earlier than p, so we can't replace p' with p, and we don't
+                    // need to add p to the queue
                     continue;
                 }
 
-                let _ = &queue.insert(route, p);
+                // Else add to queue
+                queue.push((route, p));
             }
         }
 
@@ -313,6 +193,7 @@ pub fn raptor(
 
             // Traverse stops in route starting with marked stop
             let start_sequence = route_stops.iter().position(|stop| &stop == p).unwrap();
+
             for stop_sequence in start_sequence..route_stops.len() {
                 // Stop (index) of the stop in the trip we traverse
                 let trip_stop = &route_stops[stop_sequence];
@@ -330,6 +211,7 @@ pub fn raptor(
 
                     //TODO consider minimum time it takes to transfer between lines/routes/trips
                     //TODO check if we can drop off at stop
+
                     if &arrival_time < min(earliest_arrival, earliest_arrival_target) {
                         current_round_labels.insert(*trip_stop, *arrival_time);
                         best_by_stop.insert(*trip_stop, arrival_time);
@@ -363,7 +245,7 @@ pub fn raptor(
             }
         }
 
-        // Can not change marked stops while iterating so we save them here temporarily
+        // Can not change marked stops while iterating, so we save them here temporarily
         let mut new_marks = HashSet::new();
         // Look at foot-paths
         for p in &marked_stops {
@@ -404,7 +286,7 @@ pub fn raptor(
         connections_by_round.push(connection_by_stop);
     }
 
-    return connections_by_round;
+    connections_by_round
 }
 
 #[test]

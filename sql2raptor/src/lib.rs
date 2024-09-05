@@ -1,11 +1,10 @@
-use crate::{Route, RoutesData, Stop, StopTime, StopsData, Transfer};
-use rusqlite::Connection;
-use rusqlite::{Error};
+use libsql::Connection;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::identity;
 
 use std::mem;
+use raptor::shared::{Route, RoutesData, Stop, StopTime, StopsData, Transfer};
 
 struct Trip {
     id: String,
@@ -62,11 +61,9 @@ pub struct GetStopsReturn {
     pub index_by_stop_id: HashMap<String, usize>,
 }
 
-pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
+pub async fn get_stops(connection: &Connection) -> Result<GetStopsReturn, libsql::Error> {
     //TODO transfers
-    let mut statement = connection.prepare("SELECT id FROM stops;")?;
-
-    let mut rows = statement.query([])?;
+    let mut rows = connection.query("SELECT id FROM stops;", ()).await?;
 
     // As we don't know the stop index of every target stop yet, we need to complete transfers later
     let partial_transfers: Vec<(&String, u64)> = Vec::new();
@@ -81,7 +78,7 @@ pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
     let mut transfers_count: usize = 0;
 
     loop {
-        match rows.next()? {
+        match rows.next().await? {
             None => {
                 // Process last row if there was one (otherwise query result was empty)
                 if let Some(last_id) = current_stop_id {
@@ -101,7 +98,7 @@ pub fn get_stops(connection: &Connection) -> Result<GetStopsReturn, Error> {
                 break;
             }
             Some(row) => {
-                let new_stop_id = row.get::<_, String>("id")?;
+                let new_stop_id = row.get(0)?;
                 //let transfer_target_id =//TODO
                 //let transfer_time=//TODO
 
@@ -165,12 +162,12 @@ pub struct GetRoutesReturn {
     route_stops_count: usize,
 }
 
-pub fn get_routes(
+pub async fn get_routes(
     connection: &Connection,
     index_by_stop_id: HashMap<String, usize>,
-) -> Result<GetRoutesReturn, Error> {
-    // We determine routes ourself by defining each trip with unique sequence of stops as a route
-    let mut statement = connection.prepare(
+) -> Result<GetRoutesReturn, libsql::Error> {
+    // We determine routes ourselves by defining each trip with unique sequence of stops as a route
+    let mut rows = connection.query(
         // We need the trip id to reconstruct the route and trip although the RAPTOR algorithm
         // does not care about it.
         // I assume stop departure, stop id and trip stop count get very close to uniquely
@@ -184,8 +181,7 @@ pub fn get_routes(
                 departure_time_seconds
             FROM stop_times
             ORDER BY trip_id, departure_time_seconds",
-    )?;
-    let mut rows = statement.query([])?;
+        ()).await?;
 
     // Trips by stop id sequence
     let mut trips_by_stops: HashMap<Vec<usize>, Vec<Trip>> = HashMap::new();
@@ -197,7 +193,7 @@ pub fn get_routes(
     let mut stop_times_count: usize = 0;
     let mut route_stops_count: usize = 0;
     loop {
-        match rows.next()? {
+        match rows.next().await? {
             None => {
                 // Is last row?
                 if let Some(last_trip) = current_trip {
@@ -216,14 +212,15 @@ pub fn get_routes(
                 break;
             }
             Some(row) => {
-                let next_trip_id: String = row.get("trip_id")?;
-                let stop_id: String = row.get("stop_id")?;
+                let next_trip_id: String = row.get(0 /* trip_id */)?;
+                let stop_id: String = row.get(1 /* stop_id */)?;
                 // Assume we have all stops that can be referenced or this would reference a non-existent
                 // stop which is undefined behavior but would at least make this route unusable for end users
                 let stop_index = index_by_stop_id.get(&stop_id).unwrap();
                 let stop_time = StopTime {
-                    arrival_time: row.get::<_, u64>("departure_time_seconds")?.into(),
-                    departure_time: row.get::<_, u64>("arrival_time_seconds")?.into(),
+                    //TODO check if we did not accidentally swap arrival and departure
+                    arrival_time: row.get::<u64>(3 /* departure_time_seconds */)?.into(),
+                    departure_time: row.get::<u64>(2 /* arrival_time_seconds */)?.into(),
                 };
 
                 current_trip = match current_trip {
@@ -308,7 +305,7 @@ pub fn assemble_raptor_data(
 ) -> (RoutesData, StopsData, Vec<String>) {
     // Final assembly RoutesData
 
-    // Trip ids where the index refers to the number of the block that represents a trip in
+    // Trip ids where the index refers to the number of the block that represents a trip contained in
     // stop_times. Not relevant for RAPTOR but needed to reconstruct journey
     let mut trip_ids: Vec<String> = Vec::with_capacity(trips_count);
 

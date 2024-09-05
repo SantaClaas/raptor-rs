@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Raptor</title>
+
+</head>
+
+<body>
+<h1>Raptor connection finder</h1>
+{% if let Some(error) = error %}
+<p>{{ error }}</p>
+{% endif %}
+<form>
+    <label for="start">Start</label>
+    <input type="search"
+           id="start"
+           name="start"
+           list="start-results"
+           required
+           {% if let Some(start)=start %}
+           value="{{ start }}"
+           {% endif %}
+           hx-post="/stops/start"
+           hx-trigger="input changed delay:250ms, start"
+           hx-target="#start-results"
+           hx-params="start">
+    <datalist id="start-results"></datalist>
+
+    <label for="end">End</label>
+    <input type="search"
+           id="end"
+           name="end"
+           list="end-results"
+           required
+           {% if let Some(end)=end %}
+           value="{{ end }}"
+           {% endif %}
+           hx-post="/stops/end"
+           hx-trigger="input changed delay:250ms, end"
+           hx-target="#end-results"
+           hx-params="end">
+    <datalist id="end-results"></datalist>
+
+    <label for="departure">Departure</label>
+    <input type="datetime-local"
+           id="departure"
+           name="departure"
+           required
+           {% if let Some(departure) = departure %}
+           value="{{ departure }}"
+           {% endif %}
+    >
+
+    <button type="submit">Find</button>
+</form>
+
+{% if let Some(results) = results %}
+<table>
+    <thead>
+    <tr>
+        <th>Round</th>
+        <th>Stop</th>
+        <th>Route</th>
+        <th>Trip</th>
+        <th>Boarded</th>
+        <th>Exited</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for round in results %}
+    <tr>
+        <td>{{ loop.index }}</td>
+    </tr>
+        {% for row in round %}
+        <tr>
+            <td></td>
+            <td>{{ row.stop_name }}</td>
+            <td>{{ row.route }}</td>
+            <td>{{ row.trip_number }}</td>
+            <td>{{ row.boarded }}</td>
+            <td>{{ row.exited }}</td>
+        </tr>
+        {% endfor %}
+    {% endfor %}
+
+</tbody>
+</table>
+{% endif %}
+
+<script src="/htmx.min.js"></script>
+</body>
+</html>

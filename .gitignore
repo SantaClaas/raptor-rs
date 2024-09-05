@@ -4,6 +4,11 @@
 
 # Generated database files
 *.db
+*.db-journal
 
 # MacOS things
 .DS_Store
+
+# Downloaded zip files like the ones containing GTFS data
+*.zip
+GTFS_VRS_mit_SPNV/
