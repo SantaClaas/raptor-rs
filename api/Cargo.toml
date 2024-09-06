@@ -20,7 +20,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 # Useful macros to make implementing errors easier
 thiserror = "1.0.61"
 # Async runtime
-tokio = { version = "1.37.0", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 libsql = { workspace = true }
 # Tokio utilities like file system access
 tower-http = { version = "0.5.2", features = ["fs"] }

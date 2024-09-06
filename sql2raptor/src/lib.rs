@@ -425,3 +425,28 @@ pub fn assemble_raptor_data(
 
     (routes_data, stops_data, trip_ids)
 }
+
+pub struct RaptorDataSet {
+    pub index_by_stop_id: HashMap<String, usize>,
+    pub routes_data: RoutesData,
+    pub stops_data: StopsData,
+}
+pub async fn setup_raptor(connection: &libsql::Connection) -> Result<RaptorDataSet, libsql::Error> {
+    let GetStopsReturn {
+        transfers,
+        stops: partial_stops,
+        index_by_stop_id,
+    } = get_stops(&connection).await?;
+
+    let step_2_result = get_routes(
+        &connection,
+        //TODO remove debug clone clown
+        index_by_stop_id.clone(),
+    ).await?;
+
+    //TODO check if trip ids are needed
+    let (routes_data, stops_data, _trip_ids) =
+        assemble_raptor_data(step_2_result, partial_stops, transfers);
+
+    Ok(RaptorDataSet { index_by_stop_id, routes_data, stops_data })
+}

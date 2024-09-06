@@ -22,35 +22,11 @@ use time::{OffsetDateTime, PrimitiveDateTime};
 use time::format_description::well_known;
 use tracing::{debug, error};
 use raptor::shared::{RoutesData, StopsData};
-use sql2raptor::{assemble_raptor_data, get_routes, get_stops, GetStopsReturn, PartialStop};
+use sql2raptor::{assemble_raptor_data, get_routes, get_stops, setup_raptor, GetStopsReturn, PartialStop, RaptorDataSet};
 use crate::request::{DateTimeLocal, SearchConnectionRequest};
 
 mod request;
 
-struct RaptorDataSet {
-    index_by_stop_id: HashMap<String, usize>,
-    routes_data: RoutesData,
-    stops_data: StopsData,
-}
-async fn setup_raptor(connection: &libsql::Connection) -> Result<RaptorDataSet, libsql::Error> {
-    let GetStopsReturn {
-        transfers,
-        stops: partial_stops,
-        index_by_stop_id,
-    } = get_stops(&connection).await?;
-
-    let step_2_result = get_routes(
-        &connection,
-        //TODO remove debug clone clown
-        index_by_stop_id.clone(),
-    ).await?;
-
-    //TODO check if trip ids are needed
-    let (routes_data, stops_data, _trip_ids) =
-        assemble_raptor_data(step_2_result, partial_stops, transfers);
-
-    Ok(RaptorDataSet { index_by_stop_id, routes_data, stops_data })
-}
 
 #[derive(Clone)]
 struct AppState {
@@ -74,7 +50,6 @@ async fn main() {
     let raptor_data = setup_raptor(&connection).await.unwrap();
 
     let state = AppState { connection, raptor_data: Arc::new(raptor_data) };
-
 
     let app = Router::new()
         .route("/", get(index))
@@ -184,6 +159,7 @@ async fn index(State(state): State<AppState>, Query(request): Query<SearchConnec
                     let target_index = *state.raptor_data.index_by_stop_id.get(&end_id).unwrap();
                     // let (hours, minutes, seconds) = departure.time().as_hms();
                     let raptor_departure = Time::from(departure.to_seconds());
+                    dbg!(&source_index, &target_index);
                     let rounds = raptor(
                         source_index,
                         target_index,

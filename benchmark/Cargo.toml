@@ -9,6 +9,10 @@ bench = false
 
 [dev-dependencies]
 criterion = "0.5.1"
+libsql = { workspace = true }
+raptor = { path = "../raptor" }
+sql2raptor = { path = "../sql2raptor" }
+tokio = { workspace = true, features = ["full"] }
 
 [[bench]]
 name = "benchmark"

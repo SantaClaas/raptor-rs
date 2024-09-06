@@ -289,6 +289,177 @@ pub fn raptor(
     connections_by_round
 }
 
+pub fn raptor_bugged(
+    source: usize,
+    target: usize,
+    departure: &Time,
+    route_data: RoutesData,
+    stops: StopsData,
+) -> Vec<HashMap<usize, Connection>> {
+
+    let mut k = 0usize;
+
+    // For each round the best arrival by stop. Index is amount of transfers or k - 1
+    let mut labels_by_round = vec![HashMap::from([(source, departure.clone())])];
+    // The best arrival time for any stop without caring about the round
+    let mut best_by_stop = HashMap::from([(source, departure)]);
+    // Connections to reconstruct journey
+    let mut connections_by_round = Vec::new();
+
+    let mut marked_stops = HashSet::from([&source]);
+    // Stops by route
+    // Don't use HashMap because it doesn't ensure ordering (it actually randomizes the order)
+    // TODO measure if VecDeque is faster but we don't need it as we remove elements all at once when iterating
+    let mut queue: HashMap<&usize, &usize> = HashMap::new();
+
+    while !marked_stops.is_empty() {
+        k += 1;
+        let last_round_labels = &labels_by_round[k - 1];
+
+        let mut current_round_labels: HashMap<usize, Time> = HashMap::new();
+        // Best connection for current round by the stop the connection reaches
+        // For journey reconstruction
+        let mut connection_by_stop: HashMap<usize, Connection> = HashMap::new();
+
+        // Accumulate routes serving marked stops from previous round
+        let routes_at_stop: HashMap<&usize, &[usize]> = marked_stops
+            .iter()
+            .map(|stop| (*stop, stops.get_routes(stop)))
+            .collect();
+
+        //TODO use consume queue when iterating below and remove clear
+        queue.clear();
+
+        for p in &marked_stops {
+            let routes_serving_p = routes_at_stop[p];
+
+            for route in routes_serving_p {
+                // If there is another stop that we reached, and it serves the same route,
+                // check if we can replace the other stop with the current one
+                //TODO measure performance impact of sequential search
+                if let Some(p_other) = queue.get(route) {
+                    let route_value = &route_data.routes[*route];
+                    let sequence = &route_data.get_stop_sequence(route_value, p).unwrap();
+                    let sequence_other =
+                        &route_data.get_stop_sequence(route_value, p_other).unwrap();
+
+                    // If p comes before p' (p_other) replace p' with p
+                    if sequence < sequence_other {
+                        &queue.insert(route, p);
+                    }
+                    continue;
+                }
+
+                let _ = &queue.insert(route, p);
+            }
+        }
+
+        marked_stops.clear();
+
+        for (route_index, p) in &queue {
+            // Go through each stop of route starting with p
+            let route = &route_data.routes[**route_index];
+            let route_stops = route_data.get_route_stops(route);
+            let mut current_trip: Option<(usize, &[StopTime], &usize)> = None;
+
+            // Traverse stops in route starting with marked stop
+            let start_sequence = route_stops.iter().position(|stop| &stop == p).unwrap();
+
+            for stop_sequence in start_sequence..route_stops.len() {
+                // Stop (index) of the stop in the trip we traverse
+                let trip_stop = &route_stops[stop_sequence];
+
+                if let Some((trip_number, trip_times, boarded_at_stop)) = current_trip {
+                    // Earliest known arrival at stop for any route and trip (for local pruning?)
+                    let earliest_arrival = best_by_stop.get(&trip_stop).unwrap_or(&&Infinite);
+                    // Earliest arrival at target stop for journey. Used for target pruning.
+                    // (We don't need to look at stops that arrive after the target arrival if we
+                    // have one)
+                    let earliest_arrival_target = best_by_stop.get(&target).unwrap_or(&&Infinite);
+                    // Arrival time for the current stop on the current trip for the current route
+                    let arrival_time = &trip_times[stop_sequence].arrival_time;
+                    // Can label be improved
+
+                    //TODO consider minimum time it takes to transfer between lines/routes/trips
+                    //TODO check if we can drop off at stop
+
+                    if &arrival_time < min(earliest_arrival, earliest_arrival_target) {
+                        current_round_labels.insert(*trip_stop, *arrival_time);
+                        best_by_stop.insert(*trip_stop, arrival_time);
+                        // Save connection to reconstruct journey
+                        let connection = Connection::Connection {
+                            route: **route_index,
+                            trip_number,
+                            boarded_at_stop: *boarded_at_stop,
+                            exited_at_stop: *trip_stop,
+                        };
+                        connection_by_stop.insert(*trip_stop, connection);
+                        // Mark as improved
+                        marked_stops.insert(&trip_stop);
+                    }
+                }
+
+                // Can we catch an earlier trip?
+                let previous_arrival = last_round_labels.get(trip_stop).unwrap_or(&&Infinite);
+
+                // Pseudo code example code uses departure but this is probably a typo as text uses
+                // arrival which makes more sense to my understanding of the algorithm
+                let arrival_time = &current_trip
+                    .map(|(_, trip, _)| &trip[stop_sequence].arrival_time)
+                    .unwrap_or(&Infinite);
+
+                if previous_arrival <= arrival_time {
+                    current_trip = route_data
+                        .get_earliest_departing_trip(route, &stop_sequence, previous_arrival)
+                        .map(|(trip_number, trip_times)| (trip_number, trip_times, trip_stop));
+                }
+            }
+        }
+
+        // Can not change marked stops while iterating, so we save them here temporarily
+        let mut new_marks = HashSet::new();
+        // Look at foot-paths
+        for p in &marked_stops {
+            let stop = &stops.stops[**p];
+            let start = stop.transfers_index_start;
+
+            let arrival_at_p = current_round_labels.get(*p).cloned().unwrap_or(Infinite);
+
+            for transfer_index in 0..stop.transfers_count {
+                let transfer = &stops.transfers[start + transfer_index];
+                let arrival_by_foot = arrival_at_p + transfer.time;
+
+                let current_arrival_target = current_round_labels
+                    .get(&transfer.target)
+                    .cloned()
+                    .unwrap_or(Infinite);
+
+                if arrival_by_foot < current_arrival_target {
+                    // Improved arrival time by walking
+                    current_round_labels.insert(transfer.target, arrival_by_foot);
+                    // Add footpath to connections
+                    let connection = Connection::FootPath {
+                        source: **p,
+                        transfer: transfer_index,
+                    };
+                    connection_by_stop.insert(transfer.target, connection);
+                    // Mark stop as improved
+                    new_marks.insert(&transfer.target);
+                    // marked_stops.insert(&transfer.target);
+                }
+            }
+        }
+
+        // Add collected improved stops
+        marked_stops.extend(new_marks);
+
+        labels_by_round.push(current_round_labels);
+        connections_by_round.push(connection_by_stop);
+    }
+
+    connections_by_round
+}
+
 #[test]
 fn huh() {
     assert_eq!(Finite(3), Finite(3))
